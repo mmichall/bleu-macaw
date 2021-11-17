@@ -1,16 +1,16 @@
 import os
 
-from readers.reader import Reader, MODE
 from nltk import tokenize
 
-'''
-torchtext.datasets.AmazonReviewPolarity
-'''
-class AmazonPolarityReader(Reader):
+from readers.reader import Reader, MODE
 
-    def __init__(self, root, file_name='amazon_review_polarity_csv',
-                 text_column_name='text', mode: MODE = MODE.IN_MEMORY,
+
+class WykopReader(Reader):
+
+    def __init__(self, root, file_name='entries.txt',
+                 text_column_name=None, mode: MODE = MODE.IN_MEMORY,
                  nrows=None):
+
         super().__init__(os.path.join(root, file_name), text_column_name, mode, nrows)
 
     def read_next(self):

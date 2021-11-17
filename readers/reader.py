@@ -1,29 +1,47 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 
+import pandas as pd
+from pandas import Series, DataFrame
+
 
 class MODE(Enum):
     IN_MEMORY = 1
-    LAZY = 2
 
 
 class Reader(ABC):
 
-    def __init__(self, root='.data', tokenizer=None):
+    def __init__(self, root: str, text_column_name, mode: MODE = MODE.IN_MEMORY, nrows=None):
         self.root = root
-        self.tokenizer = tokenizer
+        self.mode = mode
+        self.offset = 0
+        self.nrows = nrows
+        self.text_column_name = text_column_name
+        self.offset = 0
+        if self.mode == MODE.IN_MEMORY:
+            print(f'Reading {root} file...', end='')
+            self.df: DataFrame = pd.read_csv(f'{self.root}', nrows=nrows, delimiter='\t', delim_whitespace=False)
+            self.len = len(self.df)
+            print(f'DONE. {self.len} examples have been read.')
 
-    @abstractmethod
     def read_example(self, idx):
-        return NotImplemented
+        self.offset = idx
+        return self.read_next()
 
-    @abstractmethod
     def read_next(self):
-        return NotImplemented
+        if self.mode == MODE.IN_MEMORY:
+            item = self.df.loc[self.offset]
+            self.offset = self.offset + 1
+            text = item[self.text_column_name] if self.text_column_name else item[0]
+            return text
 
-    @abstractmethod
-    def read_column(self, name, tokenizer):
-        return NotImplemented
+    def read_text_column(self) -> Series:
+        self.reset()
+        if self.mode == MODE.IN_MEMORY:
+            return self.df[self.text_column_name] if self.text_column_name else self.df.iloc[:, 0]
+
+    def reset(self):
+        self.offset = 0
 
     def __len__(self):
         return self.len
