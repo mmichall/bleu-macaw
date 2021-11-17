@@ -18,6 +18,7 @@ def main(args):
     with open(vocab_path, 'r') as _:
         vocab: Vocab = torch.load(vocab_path)
 
+    # sentence_transformer = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
     sentence_transformer = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
     model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
                                      rnn_size=256,
@@ -36,14 +37,15 @@ def main(args):
     model.eval()
 
     words = []
-    to_paraphrase = ['Lord of the Rings is the best book I\'ve ever read.']
+    to_paraphrase = ['ty masz coś z głową?']
     predictions = model.paraphrase(to_paraphrase=to_paraphrase)
     for word_index in predictions:
         x = vocab.get_itos()[word_index]
         words.append(x)
 
     print(f'Original: {to_paraphrase}')
-    pretty = ''.join(words).replace('▁', ' ').replace('<pad>', '')
+    # pretty = ''.join(words).replace('▁', ' ').replace('<pad>', '')
+    pretty = ' '.join(words).replace('<pad>', '')
     print(f'Paraphrased: {pretty}')
 
 
@@ -51,7 +53,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-c', '--load_checkpoint', type=str,
-                        default=os.path.join('E:', 'checkpoints', "gru_amazon_2_1.32713.pytorch"))
+                        default=os.path.join('E:', 'checkpoints', "gru_amazon_0_1.86731.pytorch"))
     parser.add_argument('-n', '--num_samples', type=int, default=8)
 
     parser.add_argument('-dd', '--data_dir', type=str, default='.cache')

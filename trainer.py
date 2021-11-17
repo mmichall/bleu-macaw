@@ -57,7 +57,7 @@ class ParaphrasingModelTrainer:
 
             checkpoint_path = os.path.join(config.checkpoint_path, f'model_{epoch}_{loss}.p')
             torch.save(self.model.state_dict(), checkpoint_path)
-            print("Checkpoint saved in %s\n" % checkpoint_path)
+            print("\nCheckpoint saved in %s\n" % checkpoint_path)
 
     def loss(self, logp, target: Tensor):
         logp = logp.transpose(1, 2)

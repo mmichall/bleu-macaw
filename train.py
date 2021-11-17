@@ -22,7 +22,7 @@ def run(args):
     # tokenizer = AutoTokenizer.from_pretrained(
     #     'sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
     tokenizer = BertTokenizer.from_pretrained("dkleczek/bert-base-polish-uncased-v1")
-    reader = WykopReader(nrows=320_000, root='E:\wykop')
+    reader = WykopReader(nrows=320_000, root=f'{config.data_path}\wykop')
     dataset = LanguageModelingDataset(reader=reader,
                                       tokenizer=tokenizer,
                                       min_freq=10,
