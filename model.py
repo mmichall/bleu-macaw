@@ -5,18 +5,17 @@ from sentence_transformers import SentenceTransformer
 
 import torch.nn.functional as F
 
-import dataset
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
 
-class RNNTextGeneratingModel(nn.Module):
+class RNNTextParaphrasingModel(nn.Module):
 
     def __init__(self, sentence_transformer: SentenceTransformer, rnn_size: int, rnn_dropout: float,
                  target_embedding_dim: int, vocab_size: int, pad_index: int = None, target_embedding_dropout: float = .0,
                  num_layers: int = 1, bidirectional: bool = False):
-        super(RNNTextGeneratingModel, self).__init__()
+        super(RNNTextParaphrasingModel, self).__init__()
         self.rnn_size = rnn_size
         self.target_embedding_dim = target_embedding_dim
         self.target_embedding_dropout = target_embedding_dropout

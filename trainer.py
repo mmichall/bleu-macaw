@@ -7,16 +7,17 @@ from torch.nn.modules.loss import _Loss
 from torch.utils.data import DataLoader
 import os
 
+import config
 from dataset import LanguageModelingDataset
-from model import RNNTextGeneratingModel
+from model import RNNTextParaphrasingModel
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
 
-class RNNTextGeneratingModelTrainer:
+class ParaphrasingModelTrainer:
 
-    def __init__(self, dataset: LanguageModelingDataset, model: RNNTextGeneratingModel, optimizer: optim.Optimizer,
+    def __init__(self, dataset: LanguageModelingDataset, model: RNNTextParaphrasingModel, optimizer: optim.Optimizer,
                  criterion: _Loss, epochs=1_000_000, batch_size=32, shuffle=True, word_dropout_rate=0.):
         self.dataset = dataset
         self.optimizer = optimizer
@@ -54,7 +55,7 @@ class RNNTextGeneratingModelTrainer:
                                      f'{step} / {steps} [{np.round(100*step/steps, 3)}%], '
                                      f'{self.criterion.__class__.__name__}: {loss}')
 
-            checkpoint_path = os.path.join('E:', 'checkpoints', f'gru_amazon_{epoch}_{loss}.pytorch')
+            checkpoint_path = os.path.join(config.checkpoint_path, f'model_{epoch}_{loss}.p')
             torch.save(self.model.state_dict(), checkpoint_path)
             print("Checkpoint saved in %s\n" % checkpoint_path)
 

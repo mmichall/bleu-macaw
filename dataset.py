@@ -9,6 +9,7 @@ from pandas import Series
 from torch.utils.data import Dataset
 from torchtext.vocab import Vocab, build_vocab_from_iterator
 
+import config
 from readers.reader import Reader
 
 use_cuda = torch.cuda.is_available()
@@ -28,7 +29,7 @@ class LanguageModelingDataset(Dataset):
         self.word_dropout = word_dropout
         self.reset_vocab = reset_vocab
         if not self.vocab or self.reset_vocab:
-            path = f'.cache/vocab/{uuid}_{min_freq}.vb'
+            path = f'{config.cache_path}/vocab/{uuid}_{min_freq}.vb'
             if os.path.exists(path) and not self.reset_vocab:
                 self.vocab = torch.load(path)
                 print(f'Vocabulary has been loaded from {path}')
@@ -46,10 +47,6 @@ class LanguageModelingDataset(Dataset):
     # TODO: optimalization + cache for tokenized dataset
     def __getitem__(self, idx):
         example: str = self.reader.read_example(idx)
-        # for optimization purposes
-        # words = example.split(' ')
-        # if len(words) > self.sequence_length * 2:
-        #     example = ' '.join(words[:self.sequence_length * 2])
         raw = example
         tokenized = self.tokenizer.tokenize(example)
         _len = len(tokenized)

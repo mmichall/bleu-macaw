@@ -8,10 +8,10 @@ from transformers import AutoTokenizer, BertTokenizer
 
 import config
 from dataset import LanguageModelingDataset, SPECIALS
-from model import RNNTextGeneratingModel
+from model import RNNTextParaphrasingModel
 from readers.amazon_polarity import AmazonPolarityReader
 from readers.wykop import WykopReader
-from trainer import RNNTextGeneratingModelTrainer
+from trainer import ParaphrasingModelTrainer
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -30,20 +30,20 @@ def run(args):
                                       uuid='wykop_10',
                                       word_dropout=0.2)
     sentence_transformer = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
-    model = RNNTextGeneratingModel(sentence_transformer=sentence_transformer,
-                                   rnn_size=256,
-                                   rnn_dropout=0.,
-                                   target_embedding_dim=256,
-                                   target_embedding_dropout=0.,
-                                   pad_index=dataset.vocab[SPECIALS.PAD],
-                                   num_layers=1,
-                                   bidirectional=False,
-                                   vocab_size=dataset.vocab_len)
+    model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
+                                     rnn_size=256,
+                                     rnn_dropout=0.,
+                                     target_embedding_dim=256,
+                                     target_embedding_dropout=0.,
+                                     pad_index=dataset.vocab[SPECIALS.PAD],
+                                     num_layers=1,
+                                     bidirectional=False,
+                                     vocab_size=dataset.vocab_len)
 
     optimizer = optim.Adam(params=model.parameters(), lr=0.0005)
     criterion = NLLLoss(reduction='mean')
-    trainer = RNNTextGeneratingModelTrainer(dataset=dataset, model=model, optimizer=optimizer, criterion=criterion,
-                                            epochs=100_000, batch_size=8)
+    trainer = ParaphrasingModelTrainer(dataset=dataset, model=model, optimizer=optimizer, criterion=criterion,
+                                       epochs=100_000, batch_size=8)
 
     trainer.fit()
 

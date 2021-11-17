@@ -6,25 +6,27 @@ from sentence_transformers import SentenceTransformer
 from torchtext.vocab import Vocab
 from transformers import AutoTokenizer
 
-from model import RNNTextGeneratingModel
+import config
+from model import RNNTextParaphrasingModel
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
 
 def main(args):
-    with open(args.data_dir + '/vocab/amazon_polarity_base_english_10.vb', 'r') as _:
-        vocab: Vocab = torch.load(args.data_dir + '/vocab/amazon_polarity_base_english_10.vb')
+    vocab_path = os.path.join(config.cache_path, 'vocab', 'wykop_10_10.vb')
+    with open(vocab_path, 'r') as _:
+        vocab: Vocab = torch.load(vocab_path)
 
     sentence_transformer = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
-    model = RNNTextGeneratingModel(sentence_transformer=sentence_transformer,
-                                   rnn_size=256,
-                                   rnn_dropout=0.,
-                                   target_embedding_dim=256,
-                                   target_embedding_dropout=0.,
-                                   num_layers=1,
-                                   bidirectional=False,
-                                   vocab_size=len(vocab))
+    model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
+                                     rnn_size=256,
+                                     rnn_dropout=0.,
+                                     target_embedding_dim=256,
+                                     target_embedding_dropout=0.,
+                                     num_layers=1,
+                                     bidirectional=False,
+                                     vocab_size=len(vocab))
 
     if not os.path.exists(args.load_checkpoint):
         raise FileNotFoundError(args.load_checkpoint)

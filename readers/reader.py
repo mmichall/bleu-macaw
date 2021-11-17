@@ -11,16 +11,17 @@ class MODE(Enum):
 
 class Reader(ABC):
 
-    def __init__(self, root: str, text_column_name, mode: MODE = MODE.IN_MEMORY, nrows=None):
+    def __init__(self, root: str, text_column_name, mode: MODE = MODE.IN_MEMORY, nrows=None, delimiter=None):
         self.root = root
         self.mode = mode
         self.offset = 0
         self.nrows = nrows
+        self.delimiter = delimiter
         self.text_column_name = text_column_name
         self.offset = 0
         if self.mode == MODE.IN_MEMORY:
             print(f'Reading {root} file...', end='')
-            self.df: DataFrame = pd.read_csv(f'{self.root}', nrows=nrows, delimiter='\t', delim_whitespace=False)
+            self.df: DataFrame = pd.read_csv(f'{self.root}', nrows=nrows, delimiter=self.delimiter)
             self.len = len(self.df)
             print(f'DONE. {self.len} examples have been read.')
 
