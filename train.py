@@ -10,6 +10,7 @@ import config
 from dataset import LanguageModelingDataset, SPECIALS
 from model import RNNTextParaphrasingModel
 from readers.amazon_polarity import AmazonPolarityReader
+from readers.beletrystyka import BeletrystykaReader
 from readers.wykop import WykopReader
 from trainer import ParaphrasingModelTrainer
 
@@ -22,12 +23,12 @@ def run(args):
     # tokenizer = AutoTokenizer.from_pretrained(
     #     'sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
     tokenizer = BertTokenizer.from_pretrained("dkleczek/bert-base-polish-uncased-v1")
-    reader = WykopReader(nrows=320_000, root=f'{config.data_path}\wykop')
+    reader = BeletrystykaReader(nrows=992_000, root=f'{config.data_path}')
     dataset = LanguageModelingDataset(reader=reader,
                                       tokenizer=tokenizer,
                                       min_freq=10,
                                       sequence_length=64,
-                                      uuid='wykop_10',
+                                      uuid='beletrystyka_10',
                                       word_dropout=0.2)
     sentence_transformer = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
     model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
@@ -40,10 +41,10 @@ def run(args):
                                      bidirectional=False,
                                      vocab_size=dataset.vocab_len)
 
-    optimizer = optim.Adam(params=model.parameters(), lr=0.0005)
+    optimizer = optim.Adam(params=model.parameters(), lr=0.001)
     criterion = NLLLoss(reduction='mean')
     trainer = ParaphrasingModelTrainer(dataset=dataset, model=model, optimizer=optimizer, criterion=criterion,
-                                       epochs=100_000, batch_size=8)
+                                       epochs=100_000, batch_size=32)
 
     trainer.fit()
 

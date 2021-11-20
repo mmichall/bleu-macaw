@@ -44,7 +44,7 @@ class LanguageModelingDataset(Dataset):
     def __len__(self):
         return len(self.reader)
 
-    # TODO: optimalization + cache for tokenized dataset
+    # TODO: optimalization + cache for tokenized dataset ASAP
     def __getitem__(self, idx):
         example: str = self.reader.read_example(idx)
         raw = example
