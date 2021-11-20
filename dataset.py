@@ -5,7 +5,7 @@ import pandas as pd
 
 import torch
 import nltk
-from pandas import Series
+from pandas import Series, DataFrame
 from torch.utils.data import Dataset
 from torchtext.vocab import Vocab, build_vocab_from_iterator
 from tqdm import tqdm
@@ -52,6 +52,7 @@ class LanguageModelingDataset(Dataset):
 
     def cache_dataset(self):
         self.df = pd.DataFrame()
+        d_tmp = {}
         idxs = np.arange(self.__len__(), dtype=np.int)
         print('Dataset is preparing...')
         for idx in tqdm(idxs):
@@ -82,10 +83,21 @@ class LanguageModelingDataset(Dataset):
             if self.transform_to_tensor:
                 tokenized = torch.tensor(tokenized, device=device, dtype=torch.int).T
                 target = torch.tensor(target, device=device, dtype=torch.long).T
-            self.df = self.df.append(pd.Series(data=[raw, tokenized, target], copy=False), ignore_index=True)
+            d_tmp[idx] = {'raw': raw, 'tokenized': tokenized, 'target': target}
+        self.df = DataFrame.from_dict(d_tmp, "index")
         dataset_cached_path = os.path.join(config.cache_path, 'dataset', self.uuid + '.ds')
         pd.to_pickle(self.df, dataset_cached_path)
         print(f'DONE. Dataset is cached in {dataset_cached_path}')
+
+    def build_vocab(self, min_freq: int = 1) -> Vocab:
+        texts: Series = self.reader.read_text_column()
+        texts = texts.apply(lambda example: self.tokenizer.tokenize(
+            self.reader.preprocess(example.lower() if self.to_lower else example))[:self.sequence_length])
+        vocab: Vocab = build_vocab_from_iterator(texts,
+                                                 min_freq=min_freq if min_freq else 1,
+                                                 specials=[SPECIALS.UNK, SPECIALS.PAD, SPECIALS.SOS, SPECIALS.EOS, SPECIALS.MSK])
+        vocab.set_default_index(0)
+        return vocab
 
     def __len__(self):
         return len(self.reader)
@@ -93,15 +105,6 @@ class LanguageModelingDataset(Dataset):
     def __getitem__(self, idx):
         raw, tokenized, target = self.df.iloc[idx]
         return idx, raw, tokenized, target
-
-    def build_vocab(self, min_freq: int = 1) -> Vocab:
-        texts: Series = self.reader.read_text_column()
-        texts = texts.apply(lambda example: self.tokenizer.tokenize(self.reader.preprocess(example))[:self.sequence_length])
-        vocab: Vocab = build_vocab_from_iterator(texts,
-                                                 min_freq=min_freq if min_freq else 1,
-                                                 specials=[SPECIALS.UNK, SPECIALS.PAD, SPECIALS.SOS, SPECIALS.EOS, SPECIALS.MSK])
-        vocab.set_default_index(0)
-        return vocab
 
 
 class SPECIALS:
