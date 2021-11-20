@@ -61,6 +61,6 @@ class ParaphrasingModelTrainer:
 
     def loss(self, logp, target: Tensor):
         logp = logp.transpose(1, 2)
-        _loss = self.criterion(logp, target.to(dtype=torch.long))
+        _loss = self.criterion(logp, target)
         return _loss
 

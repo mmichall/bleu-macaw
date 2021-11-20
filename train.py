@@ -23,19 +23,20 @@ def run(args):
     # tokenizer = AutoTokenizer.from_pretrained(
     #     'sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
     tokenizer = BertTokenizer.from_pretrained("dkleczek/bert-base-polish-uncased-v1")
-    reader = BeletrystykaReader(nrows=992_000, root=f'{config.data_path}')
+    reader = BeletrystykaReader(nrows=992_00, root=f'{config.data_path}')
     dataset = LanguageModelingDataset(reader=reader,
                                       tokenizer=tokenizer,
                                       min_freq=10,
                                       sequence_length=64,
                                       uuid='beletrystyka_10',
-                                      word_dropout=0.2)
+                                      word_dropout=0.2,
+                                      to_lower=True)
     sentence_transformer = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
     model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
                                      rnn_size=256,
                                      rnn_dropout=0.,
-                                     target_embedding_dim=256,
-                                     target_embedding_dropout=0.,
+                                     embedding_dim=256,
+                                     embedding_dropout_rate=0.,
                                      pad_index=dataset.vocab[SPECIALS.PAD],
                                      num_layers=1,
                                      bidirectional=False,

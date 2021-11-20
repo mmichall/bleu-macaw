@@ -21,8 +21,8 @@ def main(args):
     model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
                                      rnn_size=256,
                                      rnn_dropout=0.,
-                                     target_embedding_dim=256,
-                                     target_embedding_dropout=0.,
+                                     embedding_dim=256,
+                                     embedding_dropout_rate=0.,
                                      num_layers=1,
                                      bidirectional=False,
                                      vocab_size=len(vocab))

@@ -13,8 +13,7 @@ class AmazonPolarityReader(Reader):
                  nrows=None):
         super().__init__(os.path.join(root, file_name), text_column_name, mode, nrows)
 
-    def read_next(self):
-        example: str = super().read_next()
+    def preprocess(self, example):
         sentences = tokenize.sent_tokenize(example)
         # get only first sentence
         return sentences[0]

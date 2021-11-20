@@ -37,7 +37,7 @@ class Reader(ABC):
             item = self.df.loc[self.offset]
             self.offset = self.offset + 1
             text = item[self.text_column_name] if self.text_column_name else item[0]
-            return text
+            return self.preprocess(text)
 
     def read_text_column(self) -> Series:
         self.reset()
@@ -49,6 +49,9 @@ class Reader(ABC):
 
     def read(self) -> typing.Callable:
         return pd.read_csv
+
+    def preprocess(self, exmaple):
+        return exmaple
 
     def __len__(self):
         return self.len
