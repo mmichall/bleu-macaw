@@ -5,9 +5,8 @@ from sentence_transformers import SentenceTransformer
 
 import torch.nn.functional as F
 
-
 use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
+device = torch.device("cuda" if use_cuda else "cpu")
 
 
 class RNNTextParaphrasingModel(nn.Module):
@@ -45,19 +44,25 @@ class RNNTextParaphrasingModel(nn.Module):
             device=device
         )
 
-        self.embed2hidden = nn.Linear(self.sentence_transformer.get_sentence_embedding_dimension(), self.embedding_dim,
+        self.embed2hidden = nn.Linear(self.sentence_transformer.get_sentence_embedding_dimension(), self.rnn_size,
                                       device=device)
-        self.outputs2vocab = nn.Linear(self.rnn_size * self.num_layers, self.vocab_size, device=device)
-
+        # TODO: self.rnn_size * self.num_layers
+        self.outputs2vocab = nn.Linear(self.rnn_size, self.vocab_size, device=device)
         self.to(device=device)
 
     def forward(self, raw, input_sentence, prev_hidden=None):
         if prev_hidden is not None:
             hidden = prev_hidden
         else:
-            sentence_embeddings = self.sentence_transformer.encode(raw, convert_to_numpy=False,
-                                                                   convert_to_tensor=True, device=device)
+            sentence_embeddings = raw
+            # sentence_embeddings = self.sentence_transformer.encode(raw,
+            #                                                        convert_to_numpy=False,
+            #                                                        convert_to_tensor=True)
             hidden = self.embed2hidden(sentence_embeddings).unsqueeze(0)
+            if self.num_layers > 1:
+                hidden_layer = hidden
+                for _ in range(self.num_layers - 1):
+                    hidden = torch.concat((hidden, hidden_layer), dim=0)
         input_embedding = self.input_embedding(input_sentence)
         if self.training or self.embedding_dropout_rate > 0:
             input_embedding = self.input_embedding_dropout(input_embedding)
@@ -67,22 +72,23 @@ class RNNTextParaphrasingModel(nn.Module):
 
         return logp, hidden
 
-    def init_state(self, sequence_length):
-        return (torch.zeros(self.num_layers, sequence_length, self.rnn_size, device=device),
-                torch.zeros(self.num_layers, sequence_length, self.rnn_size, device=device))
-
-    def paraphrase(self, to_paraphrase: [str]):
+    def paraphrase(self, sentence: [str]) -> [int]:
         words = []
         for t in range(30):
             if t == 0:
-                #TODO: replace 2 with SOS index
+                #TODO: replace 101 with SOS index
                 input_sequence = torch.unsqueeze(torch.Tensor(1).fill_(2).long(), dim=0).to(device=device)
                 prev_hidden = None
-            logp, hidden = self(to_paraphrase, input_sequence, prev_hidden)
+            x = None
+            if sentence:
+                x = torch.tensor(self.sentence_transformer.encode(sentence,
+                                                                 convert_to_numpy=False,
+                                                                 convert_to_tensor=True))
+            logp, hidden = self(x, input_sequence, prev_hidden)
             word_index = np.argmax(logp.cpu().detach().numpy())
             words.append(word_index)
             input_sequence = torch.tensor([word_index], device=device)
             input_sequence = torch.unsqueeze(input_sequence, dim=1)
-            to_paraphrase = None
+            sentence = None
             prev_hidden = hidden
         return words

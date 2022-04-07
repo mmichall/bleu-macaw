@@ -1,6 +1,9 @@
-data_path = '.data'
-cache_path = '.cache'
-checkpoint_path = '.checkpoint'
+root_path = '/proot/'
+raid_path = '/praid/'
+# root_path = 'E://datasets'
+data_path = f'{raid_path}/.data'
+cache_path = f'{raid_path}/.cache'
+checkpoint_path = f'{raid_path}/.cache/checkpoints'
 
 sentence_transformer = ''
 vocab_name = ''

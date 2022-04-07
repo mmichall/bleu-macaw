@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import random
 
 import torch
 import nltk
@@ -14,7 +15,7 @@ import config
 from readers.reader import Reader
 
 use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
+device = torch.device("cuda" if use_cuda else "cpu")
 
 nltk.download('punkt')
 
@@ -43,7 +44,7 @@ class LanguageModelingDataset(Dataset):
                 print(f'DONE. Cached in {path}')
         self.vocab_len = len(self.vocab)
         self.stoi = self.vocab.get_stoi()
-        cached_dataset_path = os.path.join(config.cache_path, 'dataset', self.uuid + '.ds')
+        cached_dataset_path = os.path.join(config.cache_path, '', self.uuid + '.ds')
         if os.path.exists(cached_dataset_path):
             self.df = pd.read_pickle(cached_dataset_path)
             print("Dataset loaded from %s" % cached_dataset_path)
@@ -53,13 +54,18 @@ class LanguageModelingDataset(Dataset):
     def cache_dataset(self):
         self.df = pd.DataFrame()
         d_tmp = {}
-        idxs = np.arange(self.__len__(), dtype=np.int)
+        if self.reader.randomly_to:
+            idxs = random.sample(range(self.reader.randomly_to), self.__len__())
+        else:
+            idxs = np.arange(self.__len__(), dtype=np.int)
         print('Dataset is preparing...')
         for idx in tqdm(idxs):
             example: str = self.reader.read_example(idx)
             raw = example
+            if not raw:
+                continue
             if self.to_lower:
-                raw = raw.lower()
+                raw = str(raw).lower()
             tokenized = self.tokenizer.tokenize(example)
             _len = len(tokenized)
             if _len > self.sequence_length:
@@ -81,18 +87,19 @@ class LanguageModelingDataset(Dataset):
             target[_len] = self.stoi[SPECIALS.EOS]
             tokenized[_len if _len == self.sequence_length - 1 else _len + 1] = self.stoi[SPECIALS.EOS]
             if self.transform_to_tensor:
-                tokenized = torch.tensor(tokenized, device=device, dtype=torch.int).T
-                target = torch.tensor(target, device=device, dtype=torch.long).T
-            d_tmp[idx] = {'raw': raw, 'tokenized': tokenized, 'target': target}
+                tokenized = torch.tensor(tokenized, device=device, dtype=torch.int)
+                target = torch.tensor(target, device=device, dtype=torch.long)
+            d_tmp[idx] = {'raw': raw, 'tokenized': tokenized.T, 'target': target.T}
         self.df = DataFrame.from_dict(d_tmp, "index")
-        dataset_cached_path = os.path.join(config.cache_path, 'dataset', self.uuid + '.ds')
+        dataset_cached_path = os.path.join(config.cache_path, '', self.uuid + '.ds')
         pd.to_pickle(self.df, dataset_cached_path)
         print(f'DONE. Dataset is cached in {dataset_cached_path}')
 
     def build_vocab(self, min_freq: int = 1) -> Vocab:
         texts: Series = self.reader.read_text_column()
         texts = texts.apply(lambda example: self.tokenizer.tokenize(
-            self.reader.preprocess(example.lower() if self.to_lower else example))[:self.sequence_length])
+            self.reader.preprocess(str(example).lower() if self.to_lower else example)))
+        texts = texts.apply(lambda exmple: exmple[:self.sequence_length if len(exmple) > self.sequence_length else len(exmple)])
         vocab: Vocab = build_vocab_from_iterator(texts,
                                                  min_freq=min_freq if min_freq else 1,
                                                  specials=[SPECIALS.UNK, SPECIALS.PAD, SPECIALS.SOS, SPECIALS.EOS, SPECIALS.MSK])
@@ -100,6 +107,7 @@ class LanguageModelingDataset(Dataset):
         return vocab
 
     def __len__(self):
+        # return self.reader.nrows if self.reader.nrows else len(self.reader)
         return len(self.reader)
 
     def __getitem__(self, idx):

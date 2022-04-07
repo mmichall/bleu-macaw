@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-import typing
+from typing import Union, List, Callable
+import os
 
 import pandas as pd
 from pandas import Series, DataFrame
+from sklearn.utils import shuffle
 
 
 class MODE(Enum):
@@ -12,21 +14,37 @@ class MODE(Enum):
 
 class Reader(ABC):
 
-    def __init__(self, root: str, text_column_name: str, mode: MODE = MODE.IN_MEMORY, nrows=None, delimiter=None):
+    def __init__(self, root: str, text_column_idx: Union[int, List[int]], mode: MODE = MODE.IN_MEMORY,
+                 nrows=None, delimiter=None, header=None, randomly_to=None, offset=0):
         self.root = root
         self.mode = mode
-        self.offset = 0
+        self.offset = offset
         self.nrows = nrows
         self.delimiter = delimiter
-        self.text_column_name = text_column_name
-        self.offset = 0
+        self.text_column_idx = text_column_idx
+        self.len = 0
+        self.header = header
+        self.randomly_to = randomly_to
         if self.mode == MODE.IN_MEMORY:
-            print(f'Reading {root} file...', end='')
-            self.df: DataFrame = self.read()(f'{self.root}', nrows=nrows, delimiter=self.delimiter,
-                                             skip_blank_lines=True,
-                                             usecols=[self.text_column_name] if self.text_column_name else None)
-            self.len = len(self.df)
-            print(f'DONE. {self.len} examples have been read.')
+            if os.path.isdir(self.root):
+                for f in shuffle(os.listdir(self.root))[:750]:
+                    print(f'Reading {os.path.join(self.root, f)} file...')
+                    df_tmp: DataFrame = self.read()(os.path.join(self.root, f), nrows=randomly_to if randomly_to else nrows / 100,
+                                                         delimiter=self.delimiter, skip_blank_lines=True,
+                                                         header=self.header)[0]
+                    df_tmp = df_tmp.to_frame()
+                    if hasattr(self, 'df'):
+                        self.df = self.df.append(df_tmp, ignore_index=True)
+                    else:
+                        self.df = df_tmp
+                    self.len = len(self.df)
+                print(f'DONE. {self.len} examples have been read.')
+            else:
+                print(f'Reading {root} file...', end='')
+                self.df: DataFrame = self.read()(f'{self.root}', nrows=randomly_to if randomly_to else nrows,
+                                                 delimiter=self.delimiter, skip_blank_lines=True, header=self.header)
+                self.len = randomly_to if randomly_to else len(self.df)
+                print(f'DONE. {self.len} examples have been read.')
 
     def read_example(self, idx) -> str:
         self.offset = idx
@@ -36,22 +54,22 @@ class Reader(ABC):
         if self.mode == MODE.IN_MEMORY:
             item = self.df.loc[self.offset]
             self.offset = self.offset + 1
-            text = item[self.text_column_name] if self.text_column_name else item[0]
+            text = item[self.text_column_idx] if self.text_column_idx else item[0]
             return self.preprocess(text)
 
     def read_text_column(self) -> Series:
         self.reset()
         if self.mode == MODE.IN_MEMORY:
-            return self.df[self.text_column_name] if self.text_column_name else self.df.iloc[:, 0]
+            return self.df.iloc[:, self.text_column_idx] if self.text_column_idx else self.df.iloc[:, 0]
 
     def reset(self):
         self.offset = 0
 
-    def read(self) -> typing.Callable:
+    def read(self) -> Callable:
         return pd.read_csv
 
-    def preprocess(self, exmaple):
-        return exmaple
+    def preprocess(self, example):
+        return example
 
     def __len__(self):
         return self.len
