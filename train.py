@@ -22,29 +22,26 @@ set_start_method("spawn")
 
 
 def run(args):
-    tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
-    tokenizer.enable_padding(length=32)
-    tokenizer.enable_truncation(max_length=32)
-
-    sentence_transformer = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2').to(device)
+    tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/paraphrase-MiniLM-L3-v2')
+    sentence_transformer = SentenceTransformer('sentence-transformers/paraphrase-MiniLM-L3-v2').to(device)
     # sentence_transformer = SentenceTransformer('paraphrase-MiniLM-L3-v2').to(device)
-    dataset = LanguageModelDataset(path="bookcorpus", tokenizer=tokenizer, sentence_transformer=sentence_transformer)
+    dataset = LanguageModelDataset(path="SetFit/amazon_polarity", tokenizer=tokenizer, sentence_transformer=sentence_transformer)
     dataset.build()
     model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
-                                     rnn_size=1024,
+                                     rnn_size=512,
                                      rnn_dropout=0.3,
                                      embedding_dim=400,
                                      embedding_dropout_rate=0.,
-                                     pad_index=tokenizer.padding['pad_id'],
+                                     pad_index=0,
                                      num_layers=2,
                                      bidirectional=False,
-                                     vocab_size=tokenizer.get_vocab_size())
+                                     vocab_size=len(tokenizer.get_vocab()))
 
     optimizer = optim.Adam(params=model.parameters(), lr=0.0001)
     criterion = NLLLoss(reduction='mean')
     scheduler = ReduceLROnPlateau(optimizer, factor=0.2, patience=3, threshold=1e-5)
     trainer = ParaphrasingModelTrainer(dataset=dataset, model=model, optimizer=optimizer, criterion=criterion,
-                                       scheduler=scheduler, epochs=100_000, batch_size=128)
+                                       scheduler=scheduler, epochs=100_000, batch_size=256)
 
     trainer.fit()
 

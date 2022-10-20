@@ -54,10 +54,10 @@ class RNNTextParaphrasingModel(nn.Module):
         if prev_hidden is not None:
             hidden = prev_hidden
         else:
-            sentence_embeddings = raw
-            # sentence_embeddings = self.sentence_transformer.encode(raw,
-            #                                                        convert_to_numpy=False,
-            #                                                        convert_to_tensor=True)
+            # sentence_embeddings = raw
+            sentence_embeddings = self.sentence_transformer.encode(raw,
+                                                                   convert_to_numpy=False,
+                                                                   convert_to_tensor=True)
             hidden = self.embed2hidden(sentence_embeddings).unsqueeze(0)
             if self.num_layers > 1:
                 hidden_layer = hidden
@@ -74,17 +74,17 @@ class RNNTextParaphrasingModel(nn.Module):
 
     def paraphrase(self, sentence: [str]) -> [int]:
         words = []
-        for t in range(30):
+        for t in range(64):
             if t == 0:
                 #TODO: replace 101 with SOS index
-                input_sequence = torch.unsqueeze(torch.Tensor(1).fill_(2).long(), dim=0).to(device=device)
+                input_sequence = torch.unsqueeze(torch.Tensor(1).fill_(101).long(), dim=0).to(device=device)
                 prev_hidden = None
             x = None
-            if sentence:
-                x = torch.tensor(self.sentence_transformer.encode(sentence,
-                                                                 convert_to_numpy=False,
-                                                                 convert_to_tensor=True))
-            logp, hidden = self(x, input_sequence, prev_hidden)
+            # if sentence:
+                # x = torch.tensor(self.sentence_transformer.encode(sentence,
+                #                                                  convert_to_numpy=False,
+                #                                                  convert_to_tensor=True))
+            logp, hidden = self(sentence, input_sequence, prev_hidden)
             word_index = np.argmax(logp.cpu().detach().numpy())
             words.append(word_index)
             input_sequence = torch.tensor([word_index], device=device)

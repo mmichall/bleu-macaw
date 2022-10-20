@@ -29,19 +29,20 @@ class LanguageModelDataset:
 
     def build(self):
         for key in self.dataset:
-            self.dataset[key]: Dataset = self.dataset[key].map(self.tokenize, batch_size=1024, batched=True)
-            # self.dataset[key].set_format(type='torch', columns=['input_ids', 'target_ids'],
-            #                              output_all_columns=True, device=device)
-            self.dataset[key] = self.dataset[key].map(self.transform, batch_size=1024, batched=True)
-            self.dataset[key].set_format(type='torch', columns=['text', 'input_ids', 'target_ids'],
+            self.dataset[key]: Dataset = self.dataset[key].map(self.tokenize, batch_size=256, batched=True)
+            self.dataset[key].set_format(type='torch', columns=['input_ids', 'target_ids'],
                                          output_all_columns=True, device=device)
+            # self.dataset[key] = self.dataset[key].map(self.transform, batch_size=1024, batched=True)
+            # self.dataset[key].set_format(type='torch', columns=['text', 'input_ids', 'target_ids'],
+            #                              output_all_columns=True, device=device)
 
     def tokenize(self, batch):
-        text = [text[:32] if len(text) > 32 else text for text in batch["text"]]
-        tokenized = [encode.ids for encode in self.tokenizer(batch["text"], padding=True, truncation=True)]
-        target = [example[1:] + [self.tokenizer.padding['pad_id']] for example in tokenized]
+        # text = [text[:32] if len(text) > 32 else text for text in batch["text"]]
+        tokenized = self.tokenizer(batch["text"], truncation=True, padding=True, max_length=64).data['input_ids']
+        # tokenized = [encode for encode in self.tokenizer(batch["text"], truncation=True, padding=True, max_length=32)]
+        target = [example[1:] + [0] for example in tokenized]
 
-        return {'text': text, 'input_ids': tokenized, "target_ids": target}
+        return {'text': batch['text'], 'input_ids': tokenized, "target_ids": target}
 
     def build_tokenizer(self):
         tokenizer: BertWordPieceTokenizer = BertWordPieceTokenizer(
@@ -49,8 +50,8 @@ class LanguageModelDataset:
             handle_chinese_chars=True,
             strip_accents=True,
             lowercase=True)
-        tokenizer.enable_padding(pad_id=0, pad_type_id=0, pad_token="[PAD]", length=32)
-        tokenizer.enable_truncation(max_length=32)
+        tokenizer.enable_padding(pad_id=0, pad_type_id=0, pad_token="[PAD]", length=64)
+        tokenizer.enable_truncation(max_length=64)
 
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence([tokenizer.pre_tokenizer, Digits(individual_digits=True)])
 

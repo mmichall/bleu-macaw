@@ -2,12 +2,9 @@ import os
 import torch
 import argparse
 
-from datasets import Dataset, load_dataset
 from sentence_transformers import SentenceTransformer
 from tokenizers.implementations import BertWordPieceTokenizer
-from torch.utils.data import DataLoader
-from torchtext.vocab import Vocab
-from transformers import DistilBertTokenizerFast, AutoTokenizer
+from transformers import BertTokenizerFast, AutoTokenizer
 
 import config
 from dataset.pile import LanguageModelDataset
@@ -20,27 +17,28 @@ device = torch.device("cuda" if use_cuda else "cpu")
 def main(args):
     # dataset: Dataset = load_dataset("cc_news", split="train", cache_dir=f'{config.data_path}')
 
-    tokenizer: BertWordPieceTokenizer = BertWordPieceTokenizer.from_file(f'{config.root_path}/bert-tokenizer/vocab.txt')
-    tokenizer.enable_padding(pad_id=0, pad_token="[PAD]", length=32)
-    tokenizer.enable_truncation(max_length=32)
+    # tokenizer: BertWordPieceTokenizer = BertWordPieceTokenizer.from_file(f'{config.root_path}/bert-tokenizer/vocab.txt')
+    tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/paraphrase-MiniLM-L3-v2')
+    sentence_transformer = SentenceTransformer('sentence-transformers/paraphrase-MiniLM-L3-v2').to(device)
+
     vocab = tokenizer.get_vocab()
     rvocab = {v: k for k, v in vocab.items()}
     # vocab_path = os.path.join(config.cache_path, 'vocab', 'books_5.vb')
     # with open(vocab_path, 'r') as _:
     #     vocab: Vocab = torch.load(vocab_path)
 
-    sentence_transformer = SentenceTransformer('paraphrase-MiniLM-L3-v2').to(device)
-    dataset = LanguageModelDataset(path="bookcorpus", tokenizer=tokenizer, sentence_transformer=sentence_transformer)
+    dataset = LanguageModelDataset(path="SetFit/amazon_polarity", tokenizer=tokenizer,
+                                   sentence_transformer=sentence_transformer)
 
     model = RNNTextParaphrasingModel(sentence_transformer=sentence_transformer,
-                                     rnn_size=1024,
+                                     rnn_size=512,
                                      rnn_dropout=0.3,
                                      embedding_dim=400,
                                      embedding_dropout_rate=0.,
-                                     pad_index=tokenizer.padding['pad_id'],
+                                     pad_index=0,
                                      num_layers=2,
                                      bidirectional=False,
-                                     vocab_size=tokenizer.get_vocab_size())
+                                     vocab_size=len(tokenizer.get_vocab()))
 
     if not os.path.exists(args.load_checkpoint):
         raise FileNotFoundError(args.load_checkpoint)
@@ -72,7 +70,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-c', '--load_checkpoint', type=str,
-                        default=os.path.join('/praid/.cache', "model_dropout_0_0.9809.p"))
+                        default=os.path.join('/praid/.cache', "model_dropout_5_2.91188.p"))
     parser.add_argument('-n', '--num_samples', type=int, default=8)
 
     parser.add_argument('-dd', '--data_dir', type=str, default='.cache')
