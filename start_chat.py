@@ -80,9 +80,6 @@ class ParaphrasingGenerator:
         tokenizer = AutoTokenizer.from_pretrained(self.model_path)
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
-        # tokenizer.bos_token = '<|startoftext|>'
-        # tokenizer.add_special_tokens = True
-        # tokenizer.additional_special_tokens = ['<|startoftext|>'],
         return tokenizer
 
     def _load_model(self):
@@ -105,18 +102,6 @@ class ParaphrasingGenerator:
         embeddings = normalize(self.encoder.encode(sentences), axis=1)
         sim = np.matmul(original_embedding, np.transpose(embeddings))
         idx = np.argmax(sim)
-        # L = np.argsort(-sim)[0]
-        # candidate = ''
-        # for idx in L:
-        #     rouge = load_metric("rouge")
-        #     candidate: str = sentences[idx]
-        #     results = rouge.compute(predictions=[candidate], references=[sentence])
-        #     rL = results["rougeL"].mid.fmeasure
-        #     if rL <= 0.7:
-        #         break
-            # print(candidate, ' -> ', str(rL))
-        # if candidate.lower() == sentence.lower() and len(sentences) > 1:
-        #     candidate = sentences[L[0][1]]
         return sentences[idx]
 
     def _sampling(self, min_len, max_len: int, k: int, embeddings):
@@ -125,7 +110,7 @@ class ParaphrasingGenerator:
             max_length=max_len,
             do_sample=True,
             repetition_penalty=1.8,
-            add_special_tokens=True,
+            # add_special_tokens=True,
             num_return_sequences=k,
             temperature=0.8,
             top_p=0.75,
@@ -137,7 +122,7 @@ class ParaphrasingGenerator:
             min_length=min_len,
             max_length=max_len,
             repetition_penalty=1.8,
-            add_special_tokens=True,
+            # add_special_tokens=True,
             num_return_sequences=k,
             num_beams=5,
             no_repeat_ngram_size=2,
@@ -153,7 +138,7 @@ def _process_text(text: str):
 if __name__ == '__main__':
     lang = "english"
     encoder_name = "paraphrase-multilingual-mpnet-base-v2"
-    model_path = f".cache/gpt2-{encoder_name}-{lang}-pretrained/checkpoint-130000"
+    model_path = f".cache\checkpoint\gpt2-para-retrined-v3\checkpoint-2520000"
     generator = ParaphrasingGenerator(model_path, encoder_name)
 
     try:
@@ -161,37 +146,7 @@ if __name__ == '__main__':
             _input = input('Your sentence: ')
             _input = _process_text(_input)
             pred = generator.generate(_input, strategy="sampling", filter_best=True, k=6)
-            print(f'euGeniusz\'s answer: {pred}')
+            print(f'chatbot\'s answer: {pred}')
     except EOFError as e:
         print(end="")
-
-    # raw_datasets = load_dataset(
-    #         'quora', 'train'
-    # )
-    # duplicates = raw_datasets["train"].filter(lambda example: example['is_duplicate'])
-    # raw_datasets["validation"] = duplicates.select(range(0, 3000))
-    #
-    # r1, r2, rL, rLsum = 0, 0, 0, 0
-    # for sentences in raw_datasets["validation"]["questions"]:
-    #     input = _process_text(sentences['text'][0])
-    #     ref = _process_text(sentences['text'][1])
-    #
-    #     pred = generator.generate(input, strategy="sampling", filter_best=False, k=6)
-    #     rouge = load_metric("rouge")
-    #     print(sentences['text'][0], '->', pred, 'REF:', ref)
-    #     results = rouge.compute(predictions=pred, references=[ref]*len(pred))
-    #     r1 += results["rouge1"].high.fmeasure
-    #     r2 += results["rouge2"].high.fmeasure
-    #     rL += results["rougeL"].high.fmeasure
-    #     rLsum += results["rougeLsum"].mid.fmeasure
-    #     # print('rouge1: ', results["rouge1"].mid.fmeasure)
-    #     # print('rouge2: ', results["rouge2"].mid.fmeasure)
-    #     # print('rougeL: ', results["rougeL"].mid.fmeasure)
-    #     # print('rougeLsum: ', results["rougeLsum"].mid.fmeasure)
-    # div = len(raw_datasets["validation"]["questions"])
-    # print('rouge1: ', r1 / div)
-    # print('rouge2: ', r2 / div)
-    # print('rougeL: ', rL / div)
-    # print('rougeLsum: ', rLsum / div)
-
 

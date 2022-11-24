@@ -54,18 +54,34 @@ with open("id_sentence.json", "r") as fp:
 with open("test.txt", "w", encoding='utf-8') as fp:
     for key in test_keys:
         print('\t'.join([id_sentence[str(key)], str([id_sentence[str(id)] for id in ids[key]])]), file=fp)
+        try:
+            all.remove(id_sentence[str(key)])
+            for id in ids[key]:
+                all.remove(id_sentence[str(id)])
+        except:
+            pass
 
-with open("valid.txt", "w", encoding='utf-8') as fp:
+with open("dev.txt", "w", encoding='utf-8') as fp:
     for key in valid_keys:
         for value_key in ids[key]:
-            print(''.join(['<quora>', id_sentence[str(key)], ' paraphrased: ', id_sentence[str(value_key)], '<|endoftext|>']), file=fp)
+            # print(''.join(['<quora>', id_sentence[str(key)], ' paraphrased: ', id_sentence[str(value_key)], '<|endoftext|>']), file=fp) # for supervised methods
+            # print(''.join(['<quora>', id_sentence[str(key)], '<|endoftext|>']), file=fp)
+            print(' '.join([id_sentence[str(key)], '>>>>', id_sentence[str(value_key)]]), file=fp)  # for supervised methods
+            # print(id_sentence[str(key)], file=fp)
+            try:
+                all.remove(id_sentence[str(key)])
+                for id in ids[key]:
+                    all.remove(id_sentence[str(id)])
+            except:
+                pass
 
 with open("train.txt", "w", encoding='utf-8') as fp:
     for key in train_keys:
         for value_key in ids[key]:
-            print(''.join(['<quora>', id_sentence[str(key)], ' paraphrased: ', id_sentence[str(value_key)], '<|endoftext|>']), file=fp)
+            # print(''.join(['<quora>', id_sentence[str(key)], ' paraphrased: ', id_sentence[str(value_key)], '<|endoftext|>']), file=fp)
+            print(' '.join([id_sentence[str(key)], '>>>>', id_sentence[str(value_key)]]), file=fp)
+            # print(id_sentence[str(key)], file=fp)
 
 with open("task_adaptation.txt", "w", encoding='utf-8') as fp:
     for sentence in all:
         print(''.join(['<quora>', sentence, '<|endoftext|>']), file=fp)
-

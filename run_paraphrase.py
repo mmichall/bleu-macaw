@@ -95,7 +95,7 @@ class ParaphrasingGenerator:
         model.eval()
         return model
 
-    def generate(self, sentence: str, strategy: str="sampling", filter_best: bool=False, k: int=10):
+    def generate(self, sentence: str, strategy: str = "sampling", filter_best: bool = False, k: int = 10):
         assert strategy in ("sampling", "beam_search")
         embeddings = self.encoder.encode([sentence], convert_to_tensor=True)
         strategy: Callable = self._sampling if strategy == "sampling" else self._beam_search
@@ -120,36 +120,49 @@ class ParaphrasingGenerator:
         #     rL = results["rougeL"].mid.fmeasure
         #     if rL <= 0.7:
         #         break
-            # print(candidate, ' -> ', str(rL))
+        # print(candidate, ' -> ', str(rL))
         # if candidate.lower() == sentence.lower() and len(sentences) > 1:
         #     candidate = sentences[L[0][1]]
         return sentences[idx]
 
     def _sampling(self, min_len, max_len: int, k: int, embeddings):
         return self.generator("",
-            min_length=min_len,
-            max_length=max_len,
-            do_sample=True,
-            repetition_penalty=1.8,
-            add_special_tokens=True,
-            num_return_sequences=k,
-            temperature=0.8,
-            top_p=0.75,
-            sentence_embedding=embeddings
-        )
+                              min_length=min_len,
+                              max_length=max_len,
+                              do_sample=True,
+                              repetition_penalty=1.8,
+                              add_special_tokens=True,
+                              num_return_sequences=k,
+                              temperature=0.8,
+                              top_p=0.75,
+                              sentence_embedding=embeddings
+                              )
+
+    # def _beam_search(self, min_len, max_len: int, k: int, embeddings):
+    #     return self.generator("",
+    #         min_length=min_len,
+    #         max_length=max_len,
+    #         repetition_penalty=1.8,
+    #         add_special_tokens=True,
+    #         num_return_sequences=k,
+    #         num_beams=5,
+    #         no_repeat_ngram_size=2,
+    #         early_stopping=True,
+    #         sentence_embedding=embeddings
+    #     )
 
     def _beam_search(self, min_len, max_len: int, k: int, embeddings):
         return self.generator("",
-            min_length=min_len,
-            max_length=max_len,
-            repetition_penalty=1.8,
-            add_special_tokens=True,
-            num_return_sequences=k,
-            num_beams=5,
-            no_repeat_ngram_size=2,
-            early_stopping=True,
-            sentence_embedding=embeddings
-        )
+                              num_beams=5,
+                              num_return_sequences=2,
+                              temperature=1.5,
+                              num_beam_groups=30,
+                              diversity_penalty=2.0,
+                              no_repeat_ngram_size=2,
+                              early_stopping=True,
+                              length_penalty=1000.0,
+                              sentence_embedding=embeddings
+                              )
 
 
 def _process_text(text: str):
@@ -161,15 +174,14 @@ if __name__ == '__main__':
     encoder_name = "paraphrase-multilingual-mpnet-base-v2"
     model_path = f".cache/gpt2-{encoder_name}-{lang}-pretrained"
 
-
     raw_datasets = load_dataset(
-            'quora', 'train'
+        'quora', 'train'
     )
 
     duplicates = raw_datasets["train"].filter(lambda example: example['is_duplicate'])
     raw_datasets["validation"] = duplicates.select(range(0, 10_000))
 
-    dirs = glob(model_path + '/q-finetuned/*/', recursive = True)
+    dirs = glob(model_path + '/q-finetuned/*/', recursive=True)
     dirs = sorted(dirs)
     dirs = [model_path + '/q-finetuned/checkpoint-30000']
     rouge = Rouge(metrics=['rouge-l', 'rouge-n'], max_n=2)
@@ -231,8 +243,3 @@ if __name__ == '__main__':
         print('rougeL: ', rL / div)
         print('bleu: ', bleuall / div)
         # print('rougeLsum: ', rLsum / div)
-
-
-
-
-

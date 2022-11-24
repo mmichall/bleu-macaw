@@ -1,28 +1,22 @@
 import argparse
 import logging
-import pickle
 import random
-from ast import literal_eval
 
 import torch
 import os
-from glob import glob
-from typing import Set, Callable
+from typing import Callable
 import numpy as np
 import tqdm
-from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu, sentence_bleu
 from sentence_transformers import SentenceTransformer
-from sklearn.preprocessing import normalize
-from torch.utils.data import SequentialSampler, DataLoader
-from transformers import AutoTokenizer, TextGenerationPipeline, Text2TextGenerationPipeline, GPT2Config, \
-    OpenAIGPTConfig, BertConfig, RobertaConfig, DistilBertConfig, CamembertConfig, CamembertForMaskedLM, \
-    GPT2LMHeadModel, GPT2Tokenizer, AutoModel, PreTrainedModel
+from transformers import AutoTokenizer, TextGenerationPipeline, GPT2Config, \
+    GPT2LMHeadModel, GPT2Tokenizer
 from transformers.pipelines.text_generation import ReturnType
 
 from modified_gpt2 import GPT2ParaphrasingLM
 
-from datasets import load_dataset, Dataset
-from rouge import Rouge
+from datasets import load_dataset
+
+from util import filter_best
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +35,7 @@ class ParaphrasingPipeline(TextGenerationPipeline):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.sentnce_sim_encoder = SentenceTransformer(args.sentnce_sim_encoder)
 
     def preprocess(self, prompt_text, prefix=""):
         inputs = self.tokenizer(
@@ -103,25 +98,24 @@ class ParaphrasingGenerator:
         self.tokenizer = self._load_tokenizer()
         self.model = self._load_model()
         self.encoder = SentenceTransformer(encoder_name) if encoder_name else None
+        self.encoder.to('cuda')
         self.sim_encoder = SentenceTransformer(sim_encoder_name) if sim_encoder_name else None
-        self.generator = ParaphrasingPipeline(model=self.model, tokenizer=self.tokenizer)
+        self.generator = ParaphrasingPipeline(model=self.model, tokenizer=self.tokenizer, sentnce_sim_encoder=config.)
 
     def _load_tokenizer(self):
         tokenizer = AutoTokenizer.from_pretrained(self.model_path)
         tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.padding_side = "left"
-        tokenizer.add_special_tokens(
-            {'additional_special_tokens': ['>>>>', '<quora>', '<|endoftext|>']}
-        )
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+        tokenizer.padding_side = 'left'
         return tokenizer
 
     def _load_model(self):
-        model = GPT2LMHeadModel.from_pretrained(self.model_path) # baseline
-        # model = GPT2ParaphrasingLM.from_pretrained(self.model_path) # gpt2 paraphrasing gpt2-para
+        # model = GPT2LMHeadModel.from_pretrained(self.model_path) # baseline
+        model = GPT2ParaphrasingLM.from_pretrained(self.model_path)  # gpt2 paraphrasing gpt2-para
         model.eval()
         return model
 
-    def generate(self, sentence: str, strategy: str = "sampling", filter_best: bool = False, k: int = 10):
+    def generate(self, sentence: str, strategy: str = "beam_search", _filter_best: bool = False, k: int = 10):
         assert strategy in ("sampling", "beam_search")
         if self.encoder:
             embeddings = self.encoder.encode([sentence], convert_to_tensor=True)
@@ -132,52 +126,47 @@ class ParaphrasingGenerator:
         outputs_sent = {sent.get("generated_text") for sent in outputs if sent != sentence}
         # outputs_sent = [sent.split(' paraphrased: ')[1] for sent in outputs_sent]
         if len(outputs_sent) == 0: return [sentence], sentence
-        return outputs_sent, self._filter_best(sentence, outputs_sent) if filter_best else ''
+        return outputs_sent, filter_best(sentence, outputs_sent, ...) if _filter_best else ''
 
-    def _filter_best(self, sentence: str, output_sent: [str]):
-        original_embedding = normalize(self.sim_encoder.encode([sentence]), axis=1)
-        sentences = list(output_sent)
-        embeddings = normalize(self.sim_encoder.encode(sentences), axis=1)
-        sim = np.matmul(original_embedding, np.transpose(embeddings))
-        sim = [_s if _s < 1.0 else 0 for _s in sim[0]]
-        idx = np.argmax(sim)
-        print(sim, sentence, idx, sentences, sentences[idx])
-        return sentences[idx]
-
-    def _sampling(self, sentence, min_len, max_len: int, k: int, embeddings):
+    def _sampling(self, sentence, k: int, embeddings):
         return self.generator(sentence if embeddings is None else '',
-                              min_length=min_len,
-                              max_length=max_len,
                               do_sample=True,
                               repetition_penalty=1.8,
                               add_special_tokens=True,
                               num_return_sequences=k,
                               temperature=0.8,
-                              top_p=0.75
-                              # sentence_embedding=embeddings # gpt2-para
+                              top_p=0.75,
+                              sentence_embedding=embeddings  # gpt2-para
                               )
 
-    def _beam_search(self, sentence, min_len, max_len: int, k: int, embeddings):
-        return self.generator(sentence if embeddings is None else '',
-                              min_length=min_len,
-                              max_length=max_len,
-                              repetition_penalty=1.8,
-                              # add_special_tokens=True,
-                              num_return_sequences=k,
-                              num_beams=5,
+    def _beam_search(self, embeddings, num_beams, num_return_sequences):
+        return self.generator("",
+                              max_length=64,
+                              num_beams=num_beams,
+                              num_return_sequences=num_return_sequences,
+                              temperature=1.0,
+                              num_beam_groups=5,
+                              repetition_penalty=1.4,
+                              diversity_penalty=0.4,
                               no_repeat_ngram_size=2,
-                              early_stopping=True
-                              # sentence_embedding = embeddings # gpt2para
-
+                              early_stopping=True,
+                              length_penalty=0.0,
+                              sentence_embedding=embeddings
                               )
 
 
-def _process_text(text: str):
-    text = text.replace("<br />", " ")
+def _process_text(sent: str):
+    sent = sent.replace("<br />", " ")
     # paraphrased: <quora>
-    text = ''.join(['<quora>', text, ' paraphrased: ']) # quora
-    # text = ' '.join(['<|endoftext|>', text])
-    return text
+    # text = ''.join(['<quora>', text, '<|endoftext|>']) # quora -para
+    # text = ''.join(['<quora>', text, ' paraphrased: ']) # quora -para
+    # text = ' '.join([text, '<|endoftext|>'])
+    if sent.endswith('!'):
+        return '<|exclamation|> ' + sent + ' <|endoftext|>'
+    if sent.endswith('?'):
+        return '<|question|> ' + sent + ' <|endoftext|>'
+    else:
+        return '<|startoftext|> ' + sent + ' <|endoftext|>'
 
 
 if __name__ == '__main__':
@@ -208,7 +197,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--model_sim_name",
-        default="",
+        required=True,
         type=str,
         help="The model checkpoint for weights initialization.",
     )
@@ -241,8 +230,8 @@ if __name__ == '__main__':
         default=-1,
         type=int,
         help="Optional input sequence length after tokenization."
-        "The training dataset will be truncated in block of this size for training."
-        "Default to the model max input length for single sentence inputs (take into account special tokens).",
+             "The training dataset will be truncated in block of this size for training."
+             "Default to the model max input length for single sentence inputs (take into account special tokens).",
     )
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
 
@@ -293,111 +282,34 @@ if __name__ == '__main__':
         args.config_name if args.config_name else args.model_name_or_path,
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
-    tokenizer = tokenizer_class.from_pretrained(
-        args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
-        cache_dir=args.cache_dir if args.cache_dir else None,
-    )
-    if args.block_size <= 0:
-        args.block_size = (
-            tokenizer.max_len_single_sentence
-        )  # Our input block size will be the max possible for the model
-    args.block_size = min(args.block_size, tokenizer.max_len_single_sentence)
-    # model = model_class.from_pretrained(
-    #     args.model_name_or_path,
-    #     from_tf=bool(".ckpt" in args.model_name_or_path),
-    #     config=config,
-    #     cache_dir=args.cache_dir if args.cache_dir else None,
-    # )
-    # model.to(args.device)
+
+    msrp = load_dataset("HHousen/msrp")
+    # msrp = load_dataset("ChristophSchuhmann/MS_COCO_2017_URL_TEXT")
+    # msrp = load_dataset("cestwc/adapted-paranmt5m")
+    msrp = msrp["train"]
+    lines = []
+    for item in msrp:
+        line = item['sentence1'] + '\t' + '[###]'
+        lines.append(line)
 
     logger.info("Evaluation parameters %s", args)
 
     generator = ParaphrasingGenerator(args.model_name_or_path, args.model_encoder_name, args.model_sim_name)
-    with open(args.data_file, "r", encoding='utf-8') as f:
-        lines = [line.rstrip() for line in f]
-    rouge = Rouge(metrics=['rouge-n', 'rouge-l'], max_n=2)
+    # with open(args.data_file, "r", encoding='utf-8') as f:
+    #     lines = [line.rstrip() for line in f]
 
-    bleu_2, bleu_4, rouge_1, rouge_2, rouge_l = 0, 0, 0, 0, 0
+    with open('results/gpt2-para-distilroberta-unsupervised-0.9M-pit.txt', "w", encoding='utf-8') as f, open(
+            '.data/pit/train.data', "r", encoding='utf-8') as f_pit:
+        # lines = f_pit.readlines()
 
-    with open('results/baseline.txt', "w", encoding='utf-8') as f:
         for line in tqdm.tqdm(lines):
             input, refs = line.split('\t')
             orginal_input = input
-            refs = literal_eval(refs)
-            # refs = [ref.lower() for ref in refs]
+            # refs = literal_eval(refs)
+
             input = _process_text(input)
             cands, the_best = generator.generate(input, strategy="beam_search", filter_best=True, k=5)
+            cands = [cand.replace('\n', ' ') for cand in cands]
+            the_best = the_best.replace('\n', ' ')
             print(input, the_best)
-            print('\t'.join([orginal_input, str(the_best), str(cands), str(refs)]), file=f)
-            # cand = cand.split('>>>>')[1].split('?')[0] + '?'
-            # cand = [_c.lower() for _c in cand]
-        #     cand = cand[0].lower()
-        #
-        #     bleu_2 += sentence_bleu([ref.split() for ref in refs], cand.split(), weights=[0.5, 0.5, 0, 0])
-        #     bleu_4 += sentence_bleu([ref.split() for ref in refs], cand.split())
-        #     rouge_score = rouge.get_scores(cand, refs)
-        #     # print(input, ' -> ', cand)
-        #     # print(input, pred)
-        #     rouge_1 += rouge_score['rouge-1']['f']
-        #     rouge_2 += rouge_score['rouge-2']['f']
-        #     rouge_l += rouge_score['rouge-l']['f']
-        # n = len(lines[:100])
-        # print(bleu_2 / n, bleu_4 / n, rouge_1 / n, rouge_2 / n, rouge_l / n)
-
-        # evals
-        # rouge = Rouge(metrics=['rouge-l', 'rouge-n'], max_n=2)
-        # r1, r2, rL, rLsum, bleuall, bleuall_ori = 0, 0, 0, 0, 0, 0
-        # for _i, sentences in tqdm.tqdm(enumerate(raw_datasets["validation"]["questions"], 1)):
-        #     input = _process_text(sentences['text'][0])
-        #     ref = _process_text(sentences['text'][1])
-        #     pred = generator.generate(input, strategy="beam_search", filter_best=False, k=5)
-        #
-        #     max = 0
-        #     maxr1 = 0
-        #     maxr2 = 0
-        #     bleu_ref_max = 0
-        #     bleu_ori_max = 0
-        #     bleu_ref = 0
-        #     chencherry = SmoothingFunction()
-        #     choosen_pred = ''
-        #     # bleu_ori = bleu_score([[input.split(' ')]], [_pred.split(' ') for _pred in pred])
-        #     # for _pred in pred:
-        #     #     # results = rouge.get_scores(_pred, input)
-        #     #     # bleu_ori = nltk.translate.bleu_score.sentence_bleu([input.split(' ')], _pred.split(' '))
-        #     #     bleu_ori = bleu_score([[input.split(' ')]], [_pred.split(' ')])
-        #     #
-        #     #     # _r1 = results["rouge-1"]['f']
-        #     #     # _r2 = results["rouge-2"]['f']
-        #     #     # _rL = results["rouge-l"]['f']
-        #     #     # if max < _rL:
-        #     #     #     max = _rL
-        #     #     # if maxr1 < _r1:
-        #     #     #     maxr1 = _r1
-        #     #     # if maxr2 < _r2:
-        #     #     #     maxr2 = _r2
-        #     #     if bleu_ori_max < bleu_ori < 0.95:
-        #     #         # c
-        #     #         bleu_ref = bleu_score([[ref.split(' ')]], [_pred.split(' ')])
-        #     #         bleu_ori_max = bleu_ori
-        #     #         choosen_pred = _pred
-        #     # # rL += max
-        #     # r1 += maxr1
-        #     # r2 += maxr2
-        #
-        #     rouge.get_scores()
-        #     bleuall += bleu_ref
-        #     bleuall_ori += bleu_ori_max
-        #     print('##Input ' + sentences['text'][0], '\n##REF:', ref, "\n##GENERATED: " + choosen_pred,
-        #           f'[BLEU-ori: {bleu_ori_max}, BLEU-ref: {bleu_ref}]')
-        #     print(f'[BLEU-ori: {bleuall_ori / _i}, BLEU-ref: {bleuall / (_i)}]')
-        #     # rLsum += results["rougeLsum"]['f']
-        #     # print('rouge1: ', results["rouge1"].mid.fmeasure)
-        #     # print('rouge2: ', results["rouge2"].mid.fmeasure)
-        #     # print('rougeL: ', results["rougeL"].mid.fmeasure)
-        #     # print('rougeLsum: ', results["rougeLsum"].mid.fmeasure)
-        # div = len(raw_datasets["validation"]["questions"])
-        # print('rouge1: ', r1 / div)
-        # print('rouge2: ', r2 / div)
-        # print('rougeL: ', rL / div)
-        # print('bleu: ', bleuall / div)
-        # print('rougeLsum: ', rLsum / div)
+            print('\t'.join([orginal_input, the_best, str(cands), str(refs)]), file=f)

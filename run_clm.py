@@ -25,6 +25,9 @@ import logging
 import math
 import os
 import sys
+
+import numpy as np
+
 from config import cache_path
 from dataclasses import dataclass, field
 from typing import Optional
@@ -48,6 +51,7 @@ from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction, EvaluationStrategy, IntervalStrategy
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
+from evaluate import Evaluator
 from modified_gpt2 import GPT2ParaphrasingModel, SentenceTransformerTokenizerWrapper, GPT2ParaphrasingLM, \
     ParaphrasingDataCollator, DatasetSentenceSplitter
 
@@ -189,25 +193,27 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    sentence_encoder = "paraphrase-multilingual-mpnet-base-v2"
+    sentence_encoder = "paraphrase-mpnet-base-v2"
     lang = "english"
     args = [
         "--do_train",
         "--do_eval",
-        f"--output_dir={cache_path}/gpt2-{sentence_encoder}-{lang}/q-finetuned",
-        "--per_device_train_batch_size=16",
-        "--per_device_eval_batch_size=16",
+        f"--output_dir={cache_path}/gpt2-{sentence_encoder}-para-retrained-v3/finetuned",
+        "--per_device_train_batch_size=8",
+        "--per_device_eval_batch_size=8",
         "--gradient_accumulation_steps=1",
         "--fp16",
-        "--num_train_epochs=3",
+        "--num_train_epochs=5",
         "--save_steps=10000",
-        "--eval_steps=1000",
+        "--evaluation_strategy=steps",
+        "--eval_steps=10000",
         "--warmup_steps=1000"
     ]
     if lang == "english":
-        # args.append(f"--model_name_or_path={cache_path}/gpt2-{sentence_encoder}-{lang}-pretrained/checkpoint-130000")
-        args.append(f"--model_name_or_path=gpt2")
-        args.append("--dataset_name=quora")
+        args.append(f"--model_name_or_path={cache_path}\checkpoint\gpt2-para-retrined-v3\checkpoint-2520000")
+        args.append("--train_file=.data/quora/unsupervised.txt")
+        # args.append(f"--model_name_or_path=gpt2")
+        # args.append("--dataset_name=quora")
         # args.append("--dataset_name=openwebtext")
         args.append("--dataset_config_name=plain_text")
     elif lang == "polish":
@@ -461,8 +467,8 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=ParaphrasingDataCollator(tokenizer, padding=PaddingStrategy.LONGEST, pad_to_multiple_of=8),
-        compute_metrics=my_compute_metrics
+        data_collator=ParaphrasingDataCollator(tokenizer, padding=PaddingStrategy.LONGEST, pad_to_multiple_of=8)
+        # compute_metrics=my_compute_metrics
     )
 
     # Training
@@ -517,14 +523,27 @@ def main():
     else:
         trainer.create_model_card(**kwargs)
 
+evaluator = Evaluator(
+        metrics={
+            'bleu': lambda x: {'bleu': x['bleu']},
+            'rouge': lambda x: {'rouge1': x['rouge1'].mid.fmeasure, 'rouge2': x['rouge2'].mid.fmeasure,
+                                'rougeL': x['rougeL'].mid.fmeasure},
+            'meteor': lambda x: {'meteor': x['meteor']}
+        })  # bleurt, bert score
 
-def my_compute_metrics(p: EvalPrediction):
-    predictions = p.predictions
-    print(predictions)
-    print(p.label_ids)
-    print(p)
+def my_compute_metrics(eval_preds: EvalPrediction):
+    logits, labels = eval_preds
+    predictions = np.argmax(logits, axis=-1)
 
-    return {'rouge-1': 1}
+    metrics = {}
+    for p, l in zip(predictions, labels):
+        p = [str(_p) for _p in p]
+        l = [str(_l) for _l in l]
+        # print(p, l)
+        metrics = evaluator.compute(predictions=[p],
+                                    references=[l])
+        print(metrics)
+    return metrics
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
@@ -557,5 +576,5 @@ def read_hdf5():
         ds_arr = ds_arr
 
 if __name__ == "__main__":
-    read_hdf5()
+    # read_hdf5()
     main()

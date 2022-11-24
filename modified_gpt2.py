@@ -91,7 +91,7 @@ class DatasetSentenceSplitter:
                     # openweb
                     text = self._process_text(sentence)
                     # sentences = tokenize.sent_tokenize(text)
-                    rows.append({'text': text, "label": -1})
+                    rows.append({'text': text + ' <|endoftext|>', "label": -1})
                     # self.ids.add(id)
         df = pd.DataFrame(data=rows)
         result[key] = Dataset.from_pandas(df).shuffle()
