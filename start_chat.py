@@ -1,4 +1,3 @@
-import fileinput
 from typing import Set, Callable
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -6,10 +5,7 @@ from sklearn.preprocessing import normalize
 from transformers import AutoTokenizer, TextGenerationPipeline
 from transformers.pipelines.text_generation import ReturnType
 
-from config import cache_path
 from modified_gpt2 import GPT2ParaphrasingLM, DatasetSentenceSplitter
-
-from datasets import load_metric, load_dataset, concatenate_datasets
 
 
 class ParaphrasingPipeline(TextGenerationPipeline):

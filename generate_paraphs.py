@@ -15,7 +15,7 @@ from transformers.pipelines.text_generation import ReturnType
 from modified_gpt2 import GPT2ParaphrasingLM
 
 from datasets import load_dataset
-
+from config import results_dir_path
 from util import filter_best
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MODEL_CLASSES = {
     "gpt2": (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
 }
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def set_seed(args):
@@ -174,7 +175,15 @@ if __name__ == '__main__':
 
     parser.add_argument(
         "--data_file",
-        type=str, required=True, help="The input evaluation data file (a text file)."
+        type=str, required=False, help="The input evaluation data file (a text file)."
+    )
+    parser.add_argument(
+        "--hg_dataset_name",
+        type=str, required=False, help="Huggingface dataset name"
+    )
+    parser.add_argument(
+        "--text_column_name",
+        type=str, required=False, help="Text column name"
     )
     parser.add_argument(
         "--output_dir",
@@ -183,7 +192,6 @@ if __name__ == '__main__':
         required=True,
         help="The output directory where the model predictions and checkpoints will be written.",
     )
-    parser.add_argument("--model_type", default="gpt2", type=str, help="The model architecture to be fine-tuned.")
     parser.add_argument(
         "--model_name_or_path",
         type=str,
@@ -196,22 +204,10 @@ if __name__ == '__main__':
         help="The model checkpoint for weights initialization.",
     )
     parser.add_argument(
-        "--model_sim_name",
+        "--model_sim_encoder_name",
         required=True,
         type=str,
         help="The model checkpoint for weights initialization.",
-    )
-    parser.add_argument(
-        "--tokenizer_name",
-        default="",
-        type=str,
-        help="Optional pretrained tokenizer name or path if not the same as model_name_or_path",
-    )
-    parser.add_argument(
-        "--config_name",
-        default="",
-        type=str,
-        help="Optional pretrained config name or path if not the same as model_name_or_path",
     )
     parser.add_argument(
         "--cache_dir",
@@ -219,48 +215,30 @@ if __name__ == '__main__':
         type=str,
         help="Optional directory to store the pre-trained models downloaded from s3 (instread of the default one)",
     )
-    parser.add_argument("--per_gpu_train_batch_size", default=4, type=int, help="Batch size per GPU/CPU for training.")
     parser.add_argument(
         "--fp16",
         action="store_true",
         help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit",
     )
-    parser.add_argument(
-        "--block_size",
-        default=-1,
-        type=int,
-        help="Optional input sequence length after tokenization."
-             "The training dataset will be truncated in block of this size for training."
-             "Default to the model max input length for single sentence inputs (take into account special tokens).",
-    )
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
 
     args = parser.parse_args()
 
-    if args.model_type in ["bert", "roberta", "distilbert", "camembert"] and not args.mlm:
-        raise ValueError(
-            "BERT and RoBERTa do not have LM heads but masked LM heads. They must be run using the --mlm "
-            "flag (masked language modeling)."
-        )
-    if args.data_file is None and args.do_eval:
-        raise ValueError(
-            "Cannot do evaluation without an evaluation data file. Either supply a file to --data_file "
-            "or remove the --do_eval argument."
-        )
 
-    if (
-            os.path.exists(args.output_dir)
-            and os.listdir(args.output_dir)
-            and args.do_train
-            and not args.overwrite_output_dir
-    ):
+    if (os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir):
         raise ValueError(
             "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
                 args.output_dir
             )
         )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if not args.data_file and not args.hg_dataset_name:
+        raise ValueError(
+            "Neither data_file or hg_dataset_name specified.".format(
+                args.output_dir
+            )
+        )
+
     args.device = device
 
     # Setup logging
@@ -283,29 +261,33 @@ if __name__ == '__main__':
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
 
-    msrp = load_dataset("HHousen/msrp")
-    # msrp = load_dataset("ChristophSchuhmann/MS_COCO_2017_URL_TEXT")
-    # msrp = load_dataset("cestwc/adapted-paranmt5m")
-    msrp = msrp["train"]
-    lines = []
-    for item in msrp:
-        line = item['sentence1'] + '\t' + '[###]'
-        lines.append(line)
+    if args.hg_dataset_name:
+        data_tag = args.hg_dataset_name.split('/')[1]
+        dataset = load_dataset("HHousen/msrp")
+        # msrp = load_dataset("ChristophSchuhmann/MS_COCO_2017_URL_TEXT")
+        # msrp = load_dataset("cestwc/adapted-paranmt5m")
+        dataset = dataset["train"]
+        lines = []
+        for item in dataset:
+            line = item[args.text_column_name] + '\t' + '[###]'
+            lines.append(line)
+
+    if args.data_file:
+        data_tag = args.data_file.split('.')[0]
+        with open(args.data_file, "r", encoding='utf-8') as f:
+            lines = [line.rstrip() for line in f]
+            if '\t' not in lines[0]:
+                raise Exception('Wrong data format! Test file text format is like: input\\t[ref0,...refN]')
+
 
     logger.info("Evaluation parameters %s", args)
 
-    generator = ParaphrasingGenerator(args.model_name_or_path, args.model_encoder_name, args.model_sim_name)
-    # with open(args.data_file, "r", encoding='utf-8') as f:
-    #     lines = [line.rstrip() for line in f]
+    generator = ParaphrasingGenerator(args.model_name_or_path, args.model_encoder_name, args.model_sim_encoder_name)
 
-    with open('results/gpt2-para-distilroberta-unsupervised-0.9M-pit.txt', "w", encoding='utf-8') as f, open(
-            '.data/pit/train.data', "r", encoding='utf-8') as f_pit:
-        # lines = f_pit.readlines()
-
+    with open(f'{results_dir_path}/{args.model_encoder_name}-{data_tag}.tsv', "w", encoding='utf-8') as f:
         for line in tqdm.tqdm(lines):
             input, refs = line.split('\t')
             orginal_input = input
-            # refs = literal_eval(refs)
 
             input = _process_text(input)
             cands, the_best = generator.generate(input, strategy="beam_search", filter_best=True, k=5)
