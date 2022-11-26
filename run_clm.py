@@ -20,20 +20,18 @@ Here is the full list of checkpoints on the hub that can be fine-tuned by this s
 https://huggingface.co/models?filter=causal-lm
 """
 # You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
-
+import argparse
 import logging
 import math
 import os
 import sys
-
-import numpy as np
-
 from config import cache_path
 from dataclasses import dataclass, field
 from typing import Optional
+import pickle
 
 import datasets
-from datasets import load_dataset, concatenate_datasets, DatasetDict
+from datasets import load_dataset, concatenate_datasets, DatasetDict, load_from_disk
 
 import transformers
 from transformers import (
@@ -51,13 +49,12 @@ from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction, EvaluationStrategy, IntervalStrategy
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-from evaluate import Evaluator
 from modified_gpt2 import GPT2ParaphrasingModel, SentenceTransformerTokenizerWrapper, GPT2ParaphrasingLM, \
     ParaphrasingDataCollator, DatasetSentenceSplitter
 
 logger = logging.getLogger(__name__)
 
-
+os.environ["WANDB_DISABLED"] = "true"
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
@@ -72,7 +69,7 @@ class ModelArguments:
         default=None,
         metadata={
             "help": "The model checkpoint for weights initialization."
-            "Don't set if you want to train a model from scratch."
+                    "Don't set if you want to train a model from scratch."
         },
     )
     model_type: Optional[str] = field(
@@ -83,7 +80,7 @@ class ModelArguments:
         default=None,
         metadata={
             "help": "Override some existing default config settings when a model is trained from scratch. Example: "
-            "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index"
+                    "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index"
         },
     )
     config_name: Optional[str] = field(
@@ -108,7 +105,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
-            "with private models)."
+                    "with private models)."
         },
     )
 
@@ -140,14 +137,14 @@ class DataTrainingArguments:
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
-            "value if set."
+                    "value if set."
         },
     )
     max_eval_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
-            "value if set."
+                    "value if set."
         },
     )
 
@@ -155,8 +152,8 @@ class DataTrainingArguments:
         default=512,
         metadata={
             "help": "Optional input sequence length after tokenization. "
-            "The training dataset will be truncated in block of this size for training. "
-            "Default to the model max input length for single sentence inputs (take into account special tokens)."
+                    "The training dataset will be truncated in block of this size for training. "
+                    "Default to the model max input length for single sentence inputs (take into account special tokens)."
         },
     )
     overwrite_cache: bool = field(
@@ -188,33 +185,38 @@ class DataTrainingArguments:
                 assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
 
 
-def main():
+def main(args):
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    sentence_encoder = "paraphrase-mpnet-base-v2"
+    # sentence_encoder = "paraphrase-distilroberta-base-v2"
+    # sentence_encoder = "paraphrase-mpnet-base-v2"
+    # sentence_encoder = 'all-mpnet-base-v2'
+    sentence_encoder = args.sentence_transformer
+    data_limit = args.data_limit
     lang = "english"
     args = [
         "--do_train",
         "--do_eval",
-        f"--output_dir={cache_path}/gpt2-{sentence_encoder}-para-retrained-v3/finetuned",
-        "--per_device_train_batch_size=8",
-        "--per_device_eval_batch_size=8",
+        f"--output_dir=/praid/{sentence_encoder}/openwebtext-retrained-v5",
+        f"--per_device_train_batch_size={args.batch_size}",
+        f"--per_device_eval_batch_size={args.batch_size}",
         "--gradient_accumulation_steps=1",
         "--fp16",
-        "--num_train_epochs=5",
-        "--save_steps=10000",
-        "--evaluation_strategy=steps",
-        "--eval_steps=10000",
-        "--warmup_steps=1000"
+        f"--num_train_epochs={args.epochs}",
+        f"--save_steps={args.checkpoint_steps}",
+        f"--eval_steps={args.checkpoint_steps}",
+        f"--warmup_steps={args.warmup_steps}",
+        "--overwrite_output_dir",
+        "--model_type=gpt2",
+        "--model_name_or_path=gpt2"
     ]
     if lang == "english":
-        args.append(f"--model_name_or_path={cache_path}\checkpoint\gpt2-para-retrined-v3\checkpoint-2520000")
-        args.append("--train_file=.data/quora/unsupervised.txt")
-        # args.append(f"--model_name_or_path=gpt2")
-        # args.append("--dataset_name=quora")
-        # args.append("--dataset_name=openwebtext")
+        # args.append(f"--model_name_or_path={cache_path}/gpt2-{sentence_encoder}-{lang}-pretrained/checkpoint-130000")
+        # args.append(f"--model_name_or_path=/praid/gpt2-{sentence_encoder}/openwebtext-pretrained/checkpoint-1590000/")
+        args.append("--dataset_name=openwebtext")
+        # args.append("--train_file=/praid/quora/task_adaptation.txt")
         args.append("--dataset_config_name=plain_text")
     elif lang == "polish":
         args.append("--model_name_or_path=dkleczek/papuGaPT2")
@@ -281,20 +283,21 @@ def main():
         # not_duplicates = raw_datasets["train"].filter(lambda example: not example['is_duplicate'])
         # raw_datasets["train"] = concatenate_datasets(
         #     [duplicates.select(range(3000, len(duplicates))), not_duplicates]).shuffle()
-        raw_datasets = DatasetDict({"train": raw.select(range(10_000, len(raw))), "validation": raw.select(range(0, 10_000))})
+        raw_datasets = DatasetDict(
+            {"train": raw.select(range(10000, 210000)), "validation": raw.select(range(0, 10000))})
 
         # column_names = raw_datasets["train"].column_names
         # text_column_name = "question1" if "question1" in column_names else column_names[0]
 
-        text_column_names = ["questions"]
+        text_column_names = ["text"]
 
         # text_column_names = ["text"]
         splitter = DatasetSentenceSplitter(raw_datasets, text_column_names)
         raw_datasets = splitter.split()
 
         if "validation" not in raw_datasets.keys():
-            raw_datasets["train"] = raw_datasets["train"].select(range(10_000, len(raw_datasets["train"])))
-            raw_datasets["validation"] = raw_datasets["train"].select(range(0, 10_000))
+            raw_datasets["train"] = raw_datasets["train"].select(range(10000, 210000))
+            raw_datasets["validation"] = raw_datasets["train"].select(range(0, 10000))
         if "unsupervised" in raw_datasets.keys():
             raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets["unsupervised"]])
             del raw_datasets["unsupervised"]
@@ -361,8 +364,6 @@ def main():
         "use_fast": model_args.use_fast_tokenizer,
         "revision": model_args.model_revision,
         "use_auth_token": True if model_args.use_auth_token else None
-        # "bos_token": '<|startoftext|>',
-        # "additional_special_tokens": ['<|startoftext|>']
     }
     if model_args.tokenizer_name:
         tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
@@ -386,7 +387,7 @@ def main():
     else:
         model = GPT2ParaphrasingModel.from_config(config)
         n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
-        logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
+        logger.info(f"Training new model from scratch - Total size={n_params / 2 ** 20:.2f}M params")
 
     model.resize_token_embeddings(len(tokenizer))
 
@@ -413,24 +414,30 @@ def main():
             )
         return output
 
-    with training_args.main_process_first(desc="dataset map tokenization"):
-        tokenized_datasets = raw_datasets.map(
-            tokenize_function,
-            batched=True,
-            num_proc=data_args.preprocessing_num_workers,
-            remove_columns=column_names,
-            load_from_cache_file=not data_args.overwrite_cache,
-            desc="Running tokenizer on dataset",
-        )
+    data_limit = str(data_limit / 1_000_000) + 'M'
+    if os.path.exists(f'/praid/.cache/gpt2-{sentence_encoder}-{str(data_limit)}-tokenized'):
+        tokenized_datasets = load_from_disk(f'/praid/.cache/gpt2-{sentence_encoder}-{str(data_limit)}-tokenized')
+    else:
+        with training_args.main_process_first(desc="dataset map tokenization"):
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=column_names,
+                load_from_cache_file=True,
+                desc="Running tokenizer on dataset",
+            )
+
+        tokenized_datasets.save_to_disk(f'/praid/.cache/gpt2-{sentence_encoder}-{str(data_limit)}-tokenized')
 
     if data_args.block_size is None:
         block_size = tokenizer.model_max_length
-        if block_size > 1024:
+        if block_size > 32:
             logger.warning(
                 f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
                 "Picking 1024 instead. You can change that default value by passing --block_size xxx."
             )
-            block_size = 1024
+            block_size = 32
     else:
         if data_args.block_size > tokenizer.model_max_length:
             logger.warning(
@@ -438,7 +445,6 @@ def main():
                 f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
             )
         block_size = min(data_args.block_size, tokenizer.model_max_length)
-
 
     lm_datasets = tokenized_datasets
 
@@ -468,7 +474,6 @@ def main():
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
         data_collator=ParaphrasingDataCollator(tokenizer, padding=PaddingStrategy.LONGEST, pad_to_multiple_of=8)
-        # compute_metrics=my_compute_metrics
     )
 
     # Training
@@ -489,12 +494,13 @@ def main():
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
         trainer.log_metrics("train", metrics)
+        print("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
 
     # Evaluation
     if training_args.do_eval:
-        logger.info("*** Evaluate ***")
+        print("*** Evaluate ***")
 
         metrics = trainer.evaluate()
 
@@ -506,7 +512,7 @@ def main():
             perplexity = float("inf")
         metrics["perplexity"] = perplexity
 
-        trainer.log_metrics("eval", metrics)
+        print("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
@@ -523,60 +529,50 @@ def main():
     else:
         trainer.create_model_card(**kwargs)
 
-evaluator = Evaluator(
-        metrics={
-            'bleu': lambda x: {'bleu': x['bleu']},
-            'rouge': lambda x: {'rouge1': x['rouge1'].mid.fmeasure, 'rouge2': x['rouge2'].mid.fmeasure,
-                                'rougeL': x['rougeL'].mid.fmeasure},
-            'meteor': lambda x: {'meteor': x['meteor']}
-        })  # bleurt, bert score
-
-def my_compute_metrics(eval_preds: EvalPrediction):
-    logits, labels = eval_preds
-    predictions = np.argmax(logits, axis=-1)
-
-    metrics = {}
-    for p, l in zip(predictions, labels):
-        p = [str(_p) for _p in p]
-        l = [str(_l) for _l in l]
-        # print(p, l)
-        metrics = evaluator.compute(predictions=[p],
-                                    references=[l])
-        print(metrics)
-    return metrics
-
-
-def _mp_fn(index):
-    # For xla_spawn (TPUs)
-    main()
-
-
-def read_hdf5():
-    import h5py
-    filename = ".data/paranmt/train.hdf5"
-
-    with h5py.File(filename, "r") as f:
-        # Print all root level object names (aka keys)
-        # these can be group or dataset names
-        print("Keys: %s" % f.keys())
-        # get first object name/key; may or may NOT be a group
-        a_group_key = 'outputs'
-
-        # get the object type for a_group_key: usually group or dataset
-        print(type(f[a_group_key]))
-
-        # If a_group_key is a group name,
-        # this gets the object names in the group and returns as a list
-        data = list(f[a_group_key])
-
-        # If a_group_key is a dataset name,
-        # this gets the dataset values and returns as a list
-        data = list(f[a_group_key])
-        # preferred methods to get dataset values:
-        ds_obj = f[a_group_key]  # returns as a h5py dataset object
-        ds_arr = f[a_group_key][()]  # returns as a numpy array
-        ds_arr = ds_arr
 
 if __name__ == "__main__":
-    # read_hdf5()
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--sentence_transformer",
+        required=True,
+        help="Sentence Transformer used to encode the input sentence."
+    )
+    parser.add_argument(
+        "--data_limit",
+        type=int,
+        required=False,
+        help="Data_limit",
+        default=1_000_000
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        required=False,
+        help="Number of training epochs",
+        default=5
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        required=False,
+        help="Train/Eval batch size",
+        default=32
+    )
+    parser.add_argument(
+        "--checkpoint_steps",
+        type=int,
+        required=False,
+        help="Train/Eval batch size",
+        default=100_000
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        required=False,
+        help="Train/Eval batch size",
+        default=100_000
+    )
+    args = parser.parse_args()
+
+    main(args)

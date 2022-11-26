@@ -1,4 +1,4 @@
-# BleuMacaw: GPT-2 and SentenceTransformers for Paraphrases Generation
+# BleuMacaw: GPT-2 meets SentenceTransformers for Paraphrase Generation
 
 
 <img src="https://ih1.redbubble.net/image.790396839.3293/st,small,845x845-pad,1000x1000,f8f8f8.u2.jpg" width="260" align="right" alt="Graphical Model diagram for HRQ-VAE" />
@@ -13,12 +13,15 @@
 
 This repo contains the code for the paper [BleuMacaw: Unsupervised Paraphrasing with Pre-trained Language Model and Sentence Transformers](...), by Michał Perełkiewicz, Sławomir Dadas & Rafał Poświata (ACL 2023/ EMNLP 2023).
 
-We propose a auto-generative model of paraphrase generation based on the pre-trained OpenAI's GPT-2 model and the SentenceTransformers encoding.
+We propose an auto-generative model of paraphrase generation based on the pre-trained OpenAI's GPT-2 model and the SentenceTransformers encoding.
 
 
 ## Table of contents
 - [Installation](#installation)
 - [Datasets preparation](#datasets_preparation)
+- [Model training](#model_training)
+- [Evaluation](#evaluation)
+- [Citation](#citation)
 
 ## Installation
 
@@ -31,7 +34,7 @@ You can also use the `./docker/Dockerfile` file to build the docker image and ru
 
 ## Datasets preparation
 
-Then download (or create) the datasets/checkpoints you want to work with:
+Then download (or generate) the datasets splits you want to work with:
 
 <a href="https://..." download>Download our split of QQP</a>
 
@@ -41,45 +44,60 @@ Then download (or create) the datasets/checkpoints you want to work with:
 
 <a href="https://..." download>Download our split of Paws-Wiki</a>
 
-Data zip should be should be unzipped into `./data/<dataset_name>`, eg `./models/quora`.
+Data zip should be unzipped into `./.data/<dataset_name>`, eg `./.data/quora`.
 
-To generate data files you can also use the generation script:
+### Datasets generation
+
+To get data files you can also use the generation script and generate them by yourself:
 
 ```
 python3 ./dataset/generate.py --dataset_name quora --valid_size 1_000 --test_size 10_000 --seed 42 --output_dir <path>
 ```
 
-These should be folders `<dataset_name>` in `./data`, containing `{train,dev,test}.tsv` and `unsupervised.txt` files.
-Files: `{train,dev,test}.tsv` are used while supervised method training (used only for reproduce competitive methods results) and `unsupervised.txt` for BLeuMacaw fine-tuning.
-The default output dir is `<root>/.data/<dataset_name>`. Available datasets names: quora, msrp, paws (only Wiki), mscoco. Script automatically download the raw data files from huggingface hub and prepare splits fo training, validation, testing and for unsupervised manner learning in proper format.
+The script generates the `<dataset_name>` folder in `output_path` (default `./data)`, containing `{train,dev,test}.tsv` and `unsupervised.txt` files.
+Files `{train,dev}.tsv` are used for supervised method training (used only for reproduce competitive methods results) and `test.tsv` for evaluation purposes.
+The `unsupervised.txt` file is used for unsupervised methods training and for the BLeuMacaw model fine-tuning.
+
+Available datasets names: 
+<ol> 
+    <li> quora 
+    <li> msrp
+    <li> paws (only Wiki)
+    <li> mscoco
+</ol>
+Script automatically downloads the raw data files from the Huggingface Hub and prepares splits for training, validation, testing. It also generates data for unsupervised training.
 
 ### Files format
-TODO
+Each line in the `{train,dev}.tsv` files contains `\t`-separated pairs (input, paraphrase).
+
+The `test.tsv` file contains lines with `\t`-separated pairs (input,[paraphrase0, ..., paraphraseN]). 
+Each list of paraphrases is generated based of raw data files rules. We pay great attention to calculate the metrics like BLEU or ROGUE with using as many reference paraphrases as possible.
+
+The `unsupervised.txt` file contains simply sentence per a line.
 ### Training on a new dataset
-TODO
-### A test dataset to use for evaluation
-TODO
-## Train the model
+Implement a `.dataset/abstract.ParaCorpus` class. 
+
+## Model training
 
 ### Pre-training on large text corpus 
 
-For adapt a BleuMacaw model to sentence data type, we pre-trained the model on the OpenWebText corpus (https://huggingface.co/datasets/openwebtext). 
+For adapt the BleuMacaw model to sentence data type, we pre-trained the model on the OpenWebText corpus (https://huggingface.co/datasets/openwebtext). 
 The OpenWebText corpus is an open-source recreation of the WebText corpus (orginally used to train a GPT2 model).
 The text is web content extracted from URLs shared on Reddit with at least three upvotes (40GB).
-
+We used the nltk.sent_tokenizer to fetch sentences from text.
 For optimization purpose, we limit the number of articles from the corpus to 1 000 000 (approx. 38 261 000 sentences).
 
-To pre-train a BleuMacaw model please use the command:
+To pre-train a BleuMacaw model please use the example command:
 
 ```
-nvidia-docker run --runtime=nvidia -v <project_root_path>:/proot -v <data_path>:/praid --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -d --gpus device=<n_gpu> -p port:port paraphrases python3 /proot/run_clm.py
+python3 ./run_clm.py --sentence_transformer paraphrase_mpnet_base_v2 --data_limit 1_000_000 --epochs 5 --batch_size 32 --checkpoint_steps 100_000 --warmup_steps 100_000
 ```
 
 Steps done with the command:
 <ol>
   <li>Download the OpenWebText data files and extract them in cache folder (about 40GB of text data)</li>
   <li>Download GPT-2 and SentenceTransformers models</li>
-  <li>Tokenize the text data and cache them in cache folder (for 768 length vectors and 1M articles is approx 120GB of data).
+  <li>Tokenize the text data and cache them in cache folder (for 768 length vectors and 1M articles limit it's approx 120GB of data).
 The cached files are used for next training script run when te same SentenceEncoder and data articles limit is used.</li>
   <li>Start training the model and save checkpoint</li>
 </ol>
@@ -87,7 +105,9 @@ The cached files are used for next training script run when te same SentenceEnco
 ### Fine-tuning
 unsupervised.txt
 
-command:
+```
+python3 ./run_clm.py --dataset_name quora --epochs 5 --batch_size 32 --checkpoint_steps 10_000 --warmup_steps 10_000
+```
 
 ### Choosing GPT-2 and SentenceTransfomers models
 
@@ -108,6 +128,8 @@ For optimization purpose, we use a small GPT-2 model. The further research shoul
 BLEU, selfBLEU, oriBLEU, ROGUE-{1,2,L}, Meteor, s-t sim-{input-generated, best-refs}, BERTScore, stanford-grammar, 
 
 TODO: <miara ratio podobieństwo generated/ sim-sem generated-input>  
+
+nltk.word_tokenizer nad lower_cased.
 
 #### stanford-grammar
 
