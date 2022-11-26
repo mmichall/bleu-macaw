@@ -1,0 +1,12 @@
+transformers
+sentence-transformers
+datasets
+nltk
+numpy
+pandas
+tqdm
+torchtext
+pytorch-model-summary
+absl-py
+tensorboardX
+tables

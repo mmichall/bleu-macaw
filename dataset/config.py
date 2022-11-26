@@ -1,12 +1,9 @@
-root_path = '/proot/'
-raid_path = '/praid/'
-data_path = f'{raid_path}/.data'
-cache_path = f'.cache'
-checkpoint_path = f'.cache'
-results_dir_path = './results'
+from pathlib import Path
 
-sentence_transformer = ''
-vocab_name = ''
-tokenizer_name = ''
+ROOT_DIR = Path(__file__).parent.parent
+data_path = f'{ROOT_DIR}/.data'
+cache_path = f'{ROOT_DIR}/.cache'
+checkpoint_path = f'{cache_path}/checkpoints'
+results_dir_path = f'{ROOT_DIR}/results'
 
 unk_token = '###'

@@ -11,6 +11,7 @@ import numpy as np
 import tqdm
 from datasets import Metric
 from sentence_transformers import SentenceTransformer
+from nltk.tokenize import word_tokenize
 
 import config
 import warnings
@@ -87,7 +88,7 @@ def selfBLEU(generated):
 
 
 def preprocess(text):
-    return text.lower()
+    return ' '.join(word_tokenize(text.lower()))
 
 
 def run(args):
