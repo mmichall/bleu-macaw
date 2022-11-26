@@ -84,6 +84,11 @@ The cached files are used for next training script run when te same SentenceEnco
   <li>Start training the model and save checkpoint</li>
 </ol>
 
+### Fine-tuning
+unsupervised.txt
+
+command:
+
 ### Choosing GPT-2 and SentenceTransfomers models
 
 #### GPT-2
