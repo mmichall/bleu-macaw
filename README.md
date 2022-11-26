@@ -75,7 +75,7 @@ To pre-train a BleuMacaw model please use the command:
 nvidia-docker run --runtime=nvidia -v <project_root_path>:/proot -v <data_path>:/praid --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 -d --gpus device=<n_gpu> -p port:port paraphrases python3 /proot/run_clm.py
 ```
 
-This command:
+Steps done with the command:
 <ol>
   <li>Download the OpenWebText data files and extract them in cache folder (about 40GB of text data)</li>
   <li>Download GPT-2 and SentenceTransformers models</li>
@@ -108,5 +108,9 @@ For optimization purpose, we use a small GPT-2 model. The further research shoul
 BLEU, selfBLEU, oriBLEU, ROGUE-{1,2,L}, Meteor, s-t sim-{input-generated, best-refs}, BERTScore, stanford-grammar, 
 
 TODO: <miara ratio podobieństwo generated/ sim-sem generated-input>  
+
+#### stanford-grammar
+
+#### sim-{input-generated, best-refs}
 
 ## Citation
