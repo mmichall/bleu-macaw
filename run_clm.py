@@ -210,7 +210,7 @@ def main(args):
         f"--warmup_steps={args.warmup_steps}",
         "--overwrite_output_dir",
         "--model_type=gpt2",
-        "--model_name_or_path=gpt2"
+        f"--model_name_or_path={args.model_name_or_path}"
     ]
     if lang == "english":
         # args.append(f"--model_name_or_path={cache_path}/gpt2-{sentence_encoder}-{lang}-pretrained/checkpoint-130000")
@@ -537,6 +537,13 @@ if __name__ == "__main__":
         "--sentence_transformer",
         required=True,
         help="Sentence Transformer used to encode the input sentence."
+    )
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        required=True,
+        help="Model name or path.",
+        default="gpt2"
     )
     parser.add_argument(
         "--data_limit",
