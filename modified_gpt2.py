@@ -14,6 +14,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerBase
 from transformers.file_utils import PaddingStrategy
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, BaseModelOutputWithPastAndCrossAttentions
 from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel, GPT2Model
+import tqdm
 
 import config
 
@@ -80,25 +81,26 @@ class DatasetSentenceSplitter:
 
     def _split_part(self, key, dataset, result):
         rows = []
-        for row in dataset:
+        for row in tqdm.tqdm(dataset):
             for column in self.text_column:
                 text = row[column]
-                # json_ = json.loads(text)
-                # quora
-                sentences = text['text']
-                for id, sentence in zip(text['id'], sentences):
-                    # if id not in self.ids:
-                    # openweb
-                    text = self._process_text(sentence)
-                    # sentences = tokenize.sent_tokenize(text)
-                    rows.append({'text': text + ' <|endoftext|>', "label": -1})
-                    # self.ids.add(id)
+                text = self._process_text(text)
+                sentences = tokenize.sent_tokenize(text)
+                rows.extend([{column: sent, "label": -1} for sent in sentences])
         df = pd.DataFrame(data=rows)
-        result[key] = Dataset.from_pandas(df).shuffle()
+        result[key] = Dataset.from_pandas(df)
 
     def _process_text(self, text: str):
-        return text.replace("<br />", " ").replace("\\n", " ")
+        return text.replace("<br />", " ").replace("<br/>", "")
 
+    # V5
+    # def _process_sent(self, sent: str):
+    #     if sent.endswith('!'):
+    #         return '<|exclamation|> ' + sent + ' <|endoftext|>'
+    #     if sent.endswith('?'):
+    #         return '<|question|> ' + sent + ' <|endoftext|>'
+    #     else:
+    #         return '<|startoftext|> ' + sent + ' <|endoftext|>'
 
 
 class GPT2ParaphrasingLM(GPT2LMHeadModel):
@@ -113,22 +115,22 @@ class GPT2ParaphrasingLM(GPT2LMHeadModel):
         return result
 
     def forward(
-        self,
-        input_ids=None,
-        past_key_values=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        labels=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        sentence_embedding=None
+            self,
+            input_ids=None,
+            past_key_values=None,
+            attention_mask=None,
+            token_type_ids=None,
+            position_ids=None,
+            head_mask=None,
+            inputs_embeds=None,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            labels=None,
+            use_cache=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            sentence_embedding=None
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
@@ -192,21 +194,21 @@ class GPT2ParaphrasingModel(GPT2Model):
         super().__init__(config)
 
     def forward(
-        self,
-        input_ids=None,
-        past_key_values=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        sentence_embedding=None
+            self,
+            input_ids=None,
+            past_key_values=None,
+            attention_mask=None,
+            token_type_ids=None,
+            position_ids=None,
+            head_mask=None,
+            inputs_embeds=None,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            use_cache=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            sentence_embedding=None
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -287,7 +289,7 @@ class GPT2ParaphrasingModel(GPT2Model):
                     nonzero_indices = (attention_mask[idx][0][0] == 0).nonzero(as_tuple=False)
                     first_index = nonzero_indices[0][0]
                     emb_idx = idx if sentence_embedding.size()[0] > idx else 0
-                    inputs_embeds[idx,first_index,:] = sentence_embedding[emb_idx]
+                    inputs_embeds[idx, first_index, :] = sentence_embedding[emb_idx]
         position_embeds = self.wpe(position_ids)
         hidden_states = inputs_embeds + position_embeds
 
