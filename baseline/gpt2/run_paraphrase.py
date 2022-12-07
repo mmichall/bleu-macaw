@@ -7,15 +7,11 @@ import os
 from typing import Callable
 import numpy as np
 import tqdm
-from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, TextGenerationPipeline, GPT2Config, \
     GPT2LMHeadModel, GPT2Tokenizer
 from transformers.pipelines.text_generation import ReturnType
 
-from modified_gpt2 import GPT2ParaphrasingLM
-
 from config import results_dir_path
-from util import filter_best
 
 from config import data_path
 
@@ -93,13 +89,10 @@ class ParaphrasingPipeline(TextGenerationPipeline):
 
 class ParaphrasingGenerator:
 
-    def __init__(self, model_path: str, encoder_name: str):
+    def __init__(self, model_path: str):
         self.model_path = model_path
-        self.encoder_name = encoder_name
         self.tokenizer = self._load_tokenizer()
         self.model = self._load_model()
-        self.encoder = SentenceTransformer(encoder_name) if encoder_name else None
-        self.encoder.to('cuda')
         self.generator = ParaphrasingPipeline(model=self.model, tokenizer=self.tokenizer)
 
     def _load_tokenizer(self):
@@ -110,23 +103,17 @@ class ParaphrasingGenerator:
         return tokenizer
 
     def _load_model(self):
-        # model = GPT2LMHeadModel.from_pretrained(self.model_path) # baseline
-        model = GPT2ParaphrasingLM.from_pretrained(self.model_path)  # gpt2 paraphrasing gpt2-para
+        model = GPT2LMHeadModel.from_pretrained(self.model_path) # baseline
         model.eval()
         return model
 
     def generate(self, sentence: str, strategy: str = "beam_search", _filter_best: bool = False, k: int = 10):
         assert strategy in ("sampling", "beam_search")
-        if self.encoder:
-            embeddings = self.encoder.encode([sentence], convert_to_tensor=True)
-        else:
-            embeddings = None
         strategy: Callable = self._sampling if strategy == "sampling" else self._beam_search
-        outputs = strategy(embeddings, num_beams=10, num_return_sequences=10)
+        outputs = strategy(sentence, num_beams=10, num_return_sequences=10)
         outputs_sent = [sent.get("generated_text") for sent in outputs if sent != sentence]
-        # outputs_sent = [sent.split(' paraphrased: ')[1] for sent in outputs_sent]
         if len(outputs_sent) == 0: return [sentence], sentence
-        return outputs_sent, filter_best(sentence, list(outputs_sent), encoder=self.encoder) if _filter_best else ''
+        return outputs_sent, '###'
 
     def _sampling(self, sentence, k: int, embeddings):
         return self.generator(sentence if embeddings is None else '',
@@ -139,30 +126,23 @@ class ParaphrasingGenerator:
                               sentence_embedding=embeddings  # gpt2-para
                               )
 
-    def _beam_search(self, embeddings, num_beams, num_return_sequences):
-        return self.generator("",
+    def _beam_search(self, sentence, num_beams, num_return_sequences):
+        return self.generator(sentence + ' >>>> ',
                               max_length=128,
                               num_beams=num_beams,
                               num_return_sequences=num_return_sequences,
                               temperature=1.0,
                               num_beam_groups=5,
-                              repetition_penalty=1.5,
-                              diversity_penalty=0.6,
+                              repetition_penalty=1.2,
+                              diversity_penalty=0.3,
                               no_repeat_ngram_size=2,
                               early_stopping=True,
-                              length_penalty=0.0,
-                              sentence_embedding=embeddings
+                              length_penalty=0.0
                               )
 
 
 def _preprocess_text(sent: str):
-    sent = sent.replace("<br />", " ")
-    if sent.endswith('!'):
-        return '<|exclamation|> ' + sent + ' <|endoftext|>'
-    if sent.endswith('?'):
-        return '<|question|> ' + sent + ' <|endoftext|>'
-    else:
-        return '<|startoftext|> ' + sent + ' <|endoftext|>'
+    return sent.replace("<br />", " ")
 
 
 if __name__ == '__main__':
@@ -182,12 +162,7 @@ if __name__ == '__main__':
         type=str,
         help="The model checkpoint for weights initialization.",
     )
-    parser.add_argument(
-        "--model_encoder_name",
-        required=True,
-        type=str,
-        help="The model checkpoint for weights initialization.",
-    )
+
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
 
     args = parser.parse_args()
@@ -202,6 +177,7 @@ if __name__ == '__main__':
     set_seed(args)
 
     if args.hf_dataset_name:
+        data_tag = args.hf_dataset_name
         if not os.path.exists(f'{data_path}/{args.hf_dataset_name}'):
             raise Exception(f'{data_path}/{args.hf_dataset_name} doesn\'t exist. Please generate data files with ./dataset/generate.pl --dataset_name {args.hf_dataset_name}')
         else:
@@ -217,15 +193,15 @@ if __name__ == '__main__':
 
     logger.info("Evaluation parameters %s", args)
 
-    generator = ParaphrasingGenerator(args.model_name_or_path, args.model_encoder_name)
+    generator = ParaphrasingGenerator(args.model_name_or_path)
 
-    with open(f'{results_dir_path}/{generator.encoder_name}-{data_tag}.tsv', "w", encoding='utf-8') as f:
+    with open(f'{results_dir_path}/gpt2-base-{data_tag}.tsv', "w", encoding='utf-8') as f:
         for line in tqdm.tqdm(lines):
             input, refs = line.split('\t')
             orginal_input = input
             input = _preprocess_text(input)
-            cands, the_best = generator.generate(input, strategy="beam_search", _filter_best=True, k=5)
-            cands = [cand.replace('\n', ' ') for cand in cands]
+            cands, the_best = generator.generate(input, strategy="beam_search", _filter_best=True, k=10)
+            cands = [cand.replace('\n', ' ').split(' >>>> ')[1] for cand in cands]
             the_best = the_best.replace('\n', ' ')
             print(input, cands)
             print('\t'.join([orginal_input, the_best, str(cands), str(refs)]), file=f)

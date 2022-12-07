@@ -22,7 +22,6 @@ from sklearn.preprocessing import normalize
 
 from util import filter_best
 
-# noise remove
 warnings.filterwarnings("ignore")
 
 
@@ -92,7 +91,7 @@ def preprocess(text):
 
 
 def run(args):
-
+    encoder = SentenceTransformer(args.sentences_encoder)
     refs_metrics = Evaluator(
         metrics={
             'bleu': lambda x: {'bleu': x['bleu']},
@@ -122,7 +121,7 @@ def run(args):
             if args.print_toy_examples:
                 print_toy(lines)
 
-            print(f'> Start evaluation for {file.name} results [{len(lines)}]\n')
+            print(f'> Start evaluation for {file.name} [{len(lines)}]\n')
 
             selfbleu_global = []
             for i, line in tqdm.tqdm(enumerate(lines, 1)):
@@ -130,7 +129,7 @@ def run(args):
                     logging.info(f'WARN: The empty line ({i}) detected!')
                     continue
                 try:
-                    input, best, generated, refs = (preprocess(text) for text in split(line.strip()))
+                    input, best, generated, refs = line.split('\t')
                 except Exception as e:
                     logging.info(f'Line {i}: {e}')
                     if args.ignore_exceptions:
@@ -145,7 +144,7 @@ def run(args):
 
                 if best == config.unk_token:
                     best = filter_best(input, generated, encoder)
-                refs = ast.literal_eval(refs)
+                refs = ast.literal_eval(refs.replace('``', '"').replace('\'\'', '"'))
 
                 scores = refs_metrics.compute(predictions=[best.split()], references=[[ref.split() for ref in refs]])
                 ori_scores = original_metrics.compute(predictions=[best.split()], references=[[ref.split() for ref in refs]])
@@ -211,7 +210,9 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--sentences_similarity_encoder', required=False, default='paraphrase-mpnet-base-v2')
+    parser.add_argument('--sentences_encoder',
+                        required=False,
+                        default='all-mpnet-base-v2')
 
     parser.add_argument('--ignore_exceptions', required=False, default=False)
     parser.add_argument('--print_toy_examples', required=False, default=True)

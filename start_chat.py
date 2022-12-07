@@ -87,7 +87,7 @@ class ParaphrasingGenerator:
         assert strategy in ("sampling", "beam_search")
         embeddings = self.encoder.encode([sentence], convert_to_tensor=True)
         strategy: Callable = self._sampling if strategy == "sampling" else self._beam_search
-        outputs = strategy(1, 256, k, embeddings)
+        outputs = strategy(embeddings, 10, 10)
         outputs_sent = {sent.get("generated_text") for sent in outputs if sent != sentence}
         if len(outputs_sent) == 0: return [sentence]
         return self._filter_best(sentence, outputs_sent) if filter_best else outputs_sent
@@ -113,35 +113,43 @@ class ParaphrasingGenerator:
             sentence_embedding=embeddings
         )
 
-    def _beam_search(self, min_len, max_len: int, k: int, embeddings):
+    def _beam_search(self, embeddings, num_beams, num_return_sequences):
         return self.generator("",
-            min_length=min_len,
-            max_length=max_len,
-            repetition_penalty=1.8,
-            # add_special_tokens=True,
-            num_return_sequences=k,
-            num_beams=5,
-            no_repeat_ngram_size=2,
-            early_stopping=True,
-            sentence_embedding=embeddings
-        )
+                              max_length=128,
+                              num_beams=num_beams,
+                              num_return_sequences=num_return_sequences,
+                              temperature=1.0,
+                              num_beam_groups=5,
+                              repetition_penalty=1.5,
+                              diversity_penalty=0.6,
+                              no_repeat_ngram_size=2,
+                              early_stopping=True,
+                              length_penalty=0.0,
+                              sentence_embedding=embeddings
+                              )
 
 
-def _process_text(text: str):
-    return text.replace("<br />", " ")
+def _preprocess_text(sent: str):
+    sent = sent.replace("<br />", " ")
+    if sent.endswith('!'):
+        return '<|exclamation|> ' + sent + ' <|endoftext|>'
+    if sent.endswith('?'):
+        return '<|question|> ' + sent + ' <|endoftext|>'
+    else:
+        return '<|startoftext|> ' + sent + ' <|endoftext|>'
 
 
 if __name__ == '__main__':
     lang = "english"
-    encoder_name = "paraphrase-multilingual-mpnet-base-v2"
-    model_path = f".cache\checkpoint\gpt2-para-retrined-v3\checkpoint-2520000"
+    encoder_name = "paraphrase-distilroberta-base-v2"
+    model_path = f".cache\checkpoint\gpt2-para-retrained-v5\distilbert\checkpoint-900000"
     generator = ParaphrasingGenerator(model_path, encoder_name)
 
     try:
         while True:
             _input = input('Your sentence: ')
-            _input = _process_text(_input)
-            pred = generator.generate(_input, strategy="sampling", filter_best=True, k=6)
+            _input = _preprocess_text(_input)
+            pred = generator.generate(_input, strategy="beam_search", filter_best=False, k=6)
             print(f'chatbot\'s answer: {pred}')
     except EOFError as e:
         print(end="")

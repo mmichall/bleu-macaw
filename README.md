@@ -74,7 +74,7 @@ The `test.tsv` file contains lines with `\t`-separated pairs (input,[paraphrase0
 Each list of paraphrases is generated based of raw data files rules. We pay great attention to calculate the metrics like BLEU or ROGUE with using as many reference paraphrases as possible.
 
 The `unsupervised.txt` file contains simply sentence per a line.
-### Training on a new dataset
+### Create own dataset
 Implement a `.dataset/abstract.ParaCorpus` class. 
 
 ## Model training

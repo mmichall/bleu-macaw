@@ -42,7 +42,7 @@ from transformers import (
     HfArgumentParser,
     Trainer,
     TrainingArguments,
-    set_seed, GPT2Tokenizer, PreTrainedTokenizer
+    set_seed, GPT2Tokenizer, PreTrainedTokenizer, GPT2LMHeadModel
 )
 from transformers.file_utils import PaddingStrategy
 from transformers.testing_utils import CaptureLogger
@@ -149,7 +149,7 @@ class DataTrainingArguments:
     )
 
     block_size: Optional[int] = field(
-        default=128,
+        default=512,
         metadata={
             "help": "Optional input sequence length after tokenization. "
                     "The training dataset will be truncated in block of this size for training. "
@@ -185,39 +185,38 @@ class DataTrainingArguments:
                 assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
 
 
-def main(_args):
+def main(args):
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    sentence_encoder = _args.sentence_transformer
-    corpus_name = _args.corpus_name
-    tag = _args.tag
-    gpt2_model = _args.gpt2_model
-    corpus_limit = _args.corpus_limit
-    output_dir = _args.output_dir
-
-    corpus_cache_name = f'{corpus_name}' + f'-{str(corpus_limit / 1_000_000)}M' if corpus_limit else ''
+    # sentence_encoder = "paraphrase-distilroberta-base-v2"
+    # sentence_encoder = "paraphrase-mpnet-base-v2"
+    # sentence_encoder = 'all-mpnet-base-v2'
 
     lang = "english"
     args = [
         "--do_train",
         "--do_eval",
-        f"--output_dir={output_dir}/{gpt2_model}-{sentence_encoder}/{corpus_cache_name}-{tag}",
-        "--per_device_train_batch_size=32",
-        "--per_device_eval_batch_size=32",
+        f"--output_dir=/praid/gpt2-base",
+        f"--per_device_train_batch_size={args.batch_size}",
+        f"--per_device_eval_batch_size={args.batch_size}",
         "--gradient_accumulation_steps=1",
         "--fp16",
-        "--num_train_epochs=5",
-        "--save_steps=100000",
-        "--eval_steps=100000",
-        "--warmup_steps=10000",
+        f"--num_train_epochs={args.epochs}",
+        f"--save_steps={args.checkpoint_steps}",
+        f"--eval_steps={args.checkpoint_steps}",
+        f"--warmup_steps={args.warmup_steps}",
         "--overwrite_output_dir",
         "--model_type=gpt2",
-        f"--model_name_or_path={gpt2_model}"
+        "--model_name_or_path=gpt2"
     ]
     if lang == "english":
-        args.append(f"--dataset_name={corpus_name}")
+        # args.append(f"--model_name_or_path={cache_path}/gpt2-{sentence_encoder}-{lang}-pretrained/checkpoint-130000")
+        # args.append(f"--model_name_or_path=/praid/gpt2-{sentence_encoder}/openwebtext-pretrained/checkpoint-1590000/")
+        # args.append("--dataset_name=openwebtext")
+        args.append("--train_file=../../.data/quora/train.txt")
+        args.append("--validation_file=../../.data/quora/dev.txt")
         args.append("--dataset_config_name=plain_text")
     elif lang == "polish":
         args.append("--model_name_or_path=dkleczek/papuGaPT2")
@@ -265,21 +264,43 @@ def main(_args):
     # Set seed before initializing model.
     set_seed(training_args.seed)
 
+    # Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
+    # or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
+    # (the dataset will be downloaded automatically from the datasets Hub).
+    #
+    # For CSV/JSON files, this script will use the column called 'text' or the first column if no column called
+    # 'text' is found. You can easily tweak this behavior (see below).
+    #
+    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
+    # download the dataset.
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset(
-            data_args.dataset_name, data_args.dataset_config_name, cache_dir=cache_path
+        raw = load_dataset(
+            data_args.dataset_name, data_args.dataset_config_name, split="train", cache_dir=cache_path
         )
-        corpus_no = min(len(raw_datasets['train']), corpus_limit)
-        valid_no = int(corpus_no * 5 / 100)
-        raw_datasets["validation"] = raw_datasets["train"].select(range(0, valid_no))
-        raw_datasets["train"] = raw_datasets["train"].select(range(valid_no, corpus_no))
 
-        column_names = raw_datasets["train"].column_names
-        text_column_name = "text" if "text" in column_names else column_names[0]
+        # duplicates = raw_datasets["train"].filter(lambda example: example['is_duplicate'])
+        # not_duplicates = raw_datasets["train"].filter(lambda example: not example['is_duplicate'])
+        # raw_datasets["train"] = concatenate_datasets(
+        #     [duplicates.select(range(3000, len(duplicates))), not_duplicates]).shuffle()
+        raw_datasets = DatasetDict(
+            {"train": raw.select(range(10000, 210000)), "validation": raw.select(range(0, 10000))})
 
-        splitter = DatasetSentenceSplitter(raw_datasets, text_column_name)
-        raw_datasets = splitter.split()
+        # column_names = raw_datasets["train"].column_names
+        # text_column_name = "question1" if "question1" in column_names else column_names[0]
+
+        # text_column_names = ["text"]
+
+        # text_column_names = ["text"]
+        # splitter = DatasetSentenceSplitter(raw_datasets, text_column_names)
+        # raw_datasets = splitter.split()
+
+        if "validation" not in raw_datasets.keys():
+            raw_datasets["train"] = raw_datasets["train"].select(range(10000, 210000))
+            raw_datasets["validation"] = raw_datasets["train"].select(range(0, 10000))
+        if "unsupervised" in raw_datasets.keys():
+            raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets["unsupervised"]])
+            del raw_datasets["unsupervised"]
     else:
         data_files = {}
         dataset_args = {}
@@ -347,17 +368,18 @@ def main(_args):
     if model_args.tokenizer_name:
         tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
     elif model_args.model_name_or_path:
-        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
+        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path,
+                                                                       **tokenizer_kwargs)
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported by this script."
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
-
     tokenizer.pad_token = tokenizer.eos_token
-
+    special_tokens_dict = {'additional_special_tokens': ['>>>>']}
+    tokenizer.add_special_tokens(special_tokens_dict)
     if model_args.model_name_or_path:
-        model = GPT2ParaphrasingLM.from_pretrained(
+        model = GPT2LMHeadModel.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -366,86 +388,67 @@ def main(_args):
             use_auth_token=True if model_args.use_auth_token else None,
         )
     else:
-        model = GPT2ParaphrasingModel.from_config(config)
+        model = GPT2LMHeadModel.from_config(config)
         n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
         logger.info(f"Training new model from scratch - Total size={n_params / 2 ** 20:.2f}M params")
 
     model.resize_token_embeddings(len(tokenizer))
 
-    if os.path.exists(f'{output_dir}/.cache/{corpus_cache_name}'):
-        tokenized_datasets = load_from_disk(f'{output_dir}/.cache/{corpus_cache_name}')
-        print(f'Corpus load from {output_dir}/.cache/{corpus_cache_name}')
+    # Preprocessing the datasets.
+    # First we tokenize all the texts.
+    if training_args.do_train:
+        column_names = raw_datasets["train"].column_names
     else:
-        # Preprocessing the datasets.
-        # First we tokenize all the texts.
-        if training_args.do_train:
-            column_names = raw_datasets["train"].column_names
-        else:
-            column_names = raw_datasets["validation"].column_names
-        text_column_name = "text" if "text" in column_names else column_names[0]
+        column_names = raw_datasets["validation"].column_names
+    text_column_name = "text" if "text" in column_names else column_names[0]
 
-        # splitter = DatasetSentenceSplitter(raw_datasets, text_column_name)
-        # raw_datasets = splitter.split()
+    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
+    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
 
-        # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_ffunction
-        tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
+    # tokenizer_wrapper = SentenceTransformerTokenizerWrapper(tokenizer, text_column_name, sentence_encoder)
 
-        tokenizer_wrapper = SentenceTransformerTokenizerWrapper(tokenizer, text_column_name, sentence_encoder)
-
-        def tokenize_function(examples):
-            with CaptureLogger(tok_logger) as cl:
-                output = tokenizer_wrapper.tokenize(examples)
-            # clm input could be much much longer than block_size
-            if "Token indices sequence length is longer than the" in cl.out:
-                tok_logger.warning(
-                    "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits before being passed to the model."
-                )
-            return output
-
-        # if "validation" not in raw_datasets.keys():
-        #     corpus_no = len(raw_datasets)
-        #     valid_no = int(len(raw_datasets) * 5 / 100)
-        #     raw_datasets["train"] = raw_datasets["train"].select(range(valid_no, corpus_no + valid_no))
-        #     raw_datasets["validation"] = raw_datasets["train"].select(range(0, valid_no))
-        # if "unsupervised" in raw_datasets.keys():
-        #     raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets["unsupervised"]])
-        #     del raw_datasets["unsupervised"]
-
-        with training_args.main_process_first(desc="dataset map tokenization"):
-            tokenized_datasets = raw_datasets.map(
-                tokenize_function,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on dataset",
+    def tokenize_function(examples):
+        with CaptureLogger(tok_logger) as cl:
+            output = tokenizer(examples[text_column_name])
+        # clm input could be much much longer than block_size
+        if "Token indices sequence length is longer than the" in cl.out:
+            tok_logger.warning(
+                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
+                " before being passed to the model."
             )
-        # if data_args.block_size is None:
-        #     block_size = tokenizer.model_max_length
-        #     if block_size > 32:
-        #         logger.warning(
-        #             f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
-        #             "Picking 1024 instead. You can change that default value by passing --block_size xxx."
-        #         )
-        #         block_size = 32
-        # else:
-        #     if data_args.block_size > tokenizer.model_max_length:
-        #         logger.warning(
-        #             f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model"
-        #             f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
-        #         )
-        #     block_size = min(data_args.block_size, tokenizer.model_max_length)
+        return output
 
-        # if "validation" not in raw_datasets.keys():
-        #     raw_datasets["train"] = raw_datasets["train"].select(range(10000, corpus_limit))
-        #     raw_datasets["validation"] = raw_datasets["train"].select(range(0, 10000))
-        # if "unsupervised" in raw_datasets.keys():
-        #     raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets["unsupervised"]])
-        #     del raw_datasets["unsupervised"]
+    # data_limit = str(data_limit / 1_000_000) + 'M'
+    # if os.path.exists(f'/praid/.cache/gpt2-{sentence_encoder}-{str(data_limit)}-tokenized'):
+    #     tokenized_datasets = load_from_disk(f'/praid/.cache/gpt2-{sentence_encoder}-{str(data_limit)}-tokenized')
+    # else:
+    with training_args.main_process_first(desc="dataset map tokenization"):
+        tokenized_datasets = raw_datasets.map(
+            tokenize_function,
+            batched=True,
+            num_proc=data_args.preprocessing_num_workers,
+            remove_columns=column_names,
+            load_from_cache_file=True,
+            desc="Running tokenizer on dataset",
+        )
 
+        # tokenized_datasets.save_to_disk(f'/praid/.cache/gpt2-{sentence_encoder}-{str(data_limit)}-tokenized')
 
-        tokenized_datasets.save_to_disk(f'{output_dir}/.cache/{corpus_cache_name}')
-
+    if data_args.block_size is None:
+        block_size = tokenizer.model_max_length
+        if block_size > 32:
+            logger.warning(
+                f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
+                "Picking 1024 instead. You can change that default value by passing --block_size xxx."
+            )
+            block_size = 32
+    else:
+        if data_args.block_size > tokenizer.model_max_length:
+            logger.warning(
+                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model"
+                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
+            )
+        block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     lm_datasets = tokenized_datasets
 
@@ -532,15 +535,36 @@ def main(_args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser()
 
-    parser.add_argument('--gpt2_model', default='gpt2', type=str, help='HuggingFace GPT2 model version name.')
-    parser.add_argument('--sentence_transformer', required=True, type=str, help='HuggingFace Sentence-Transformer model name.')
-    parser.add_argument('--corpus_name', default='openwebtext')
-    parser.add_argument('--corpus_limit', type=int, default=0)
-    parser.add_argument('--output_dir', required=True, type=str)
-    parser.add_argument('--tag', default='pretraining', help='Experiment\'s tag.')
-
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        required=False,
+        help="Number of training epochs",
+        default=20
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        required=False,
+        help="Train/Eval batch size",
+        default=8
+    )
+    parser.add_argument(
+        "--checkpoint_steps",
+        type=int,
+        required=False,
+        help="Checkpoint steps",
+        default=15_000
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=int,
+        required=False,
+        help="Warmup steps",
+        default=20_000
+    )
     args = parser.parse_args()
 
     main(args)

@@ -45,7 +45,7 @@ class ParaphrasingDataCollator:
 
 class SentenceTransformerTokenizerWrapper(object):
 
-    def __init__(self, tokenizer: PreTrainedTokenizer, text_column_name: str, sentence_encoder: str, max_len: int = 512):
+    def __init__(self, tokenizer: PreTrainedTokenizer, text_column_name: str, sentence_encoder: str, max_len: int=128):
         self.tokenizer = tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
@@ -65,7 +65,7 @@ class SentenceTransformerTokenizerWrapper(object):
 
 class DatasetSentenceSplitter:
 
-    def __init__(self, dataset, text_column: List[str]):
+    def __init__(self, dataset, text_column: str):
         self.dataset = dataset
         self.text_column = text_column
         download('punkt')
@@ -82,11 +82,10 @@ class DatasetSentenceSplitter:
     def _split_part(self, key, dataset, result):
         rows = []
         for row in tqdm.tqdm(dataset):
-            for column in self.text_column:
-                text = row[column]
-                text = self._process_text(text)
-                sentences = tokenize.sent_tokenize(text)
-                rows.extend([{column: sent, "label": -1} for sent in sentences])
+            text = row[self.text_column]
+            text = self._process_text(text)
+            sentences = tokenize.sent_tokenize(text)
+            rows.extend([{self.text_column: sent, "label": -1} for sent in sentences])
         df = pd.DataFrame(data=rows)
         result[key] = Dataset.from_pandas(df)
 

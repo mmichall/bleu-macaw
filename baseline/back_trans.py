@@ -1,49 +1,48 @@
 from ast import literal_eval
-from typing import Set
 
-import numpy as np
 import tqdm
-from sklearn.preprocessing import normalize
-from BackTranslation import BackTranslation
-from sentence_transformers import SentenceTransformer
+from transformers import pipeline
 
-from util import filter_best
+#1 lang  'fr'
+#2 lang = 'de'
+#3 lang = 'ru'
+#4 lang = 'es'
+#5 lang = 'zh'
+#6 lang = 'fi'
+#7 lang = 'it'
+#8 lang = 'zls'
+#9 lang = 'hu'
+lang = 'bg'
 
 encoder_name = "paraphrase-multilingual-mpnet-base-v2"
+first_model_name = f'Helsinki-NLP/opus-mt-en-{lang}'
+translator_first = pipeline("translation", model=first_model_name, device=0)
+second_model_name = f'Helsinki-NLP/opus-mt-{lang}-en'
+translator_second = pipeline("translation", model=second_model_name, device=0)
 
 
-class BackTranslationGenerator:
+def format_batch_texts(language_code, batch_texts):
+    formated_bach = [">>{}<< {}".format(language_code, text) for text in batch_texts]
+    return formated_bach
 
-    def __init__(self):
-        self.trans = BackTranslation()
-        self.encoder = SentenceTransformer(encoder_name)
+def perform_translation(batch_texts, pipe, language="fr"):
+    formated_batch_texts = format_batch_texts(language, batch_texts)
+    return pipe(formated_batch_texts, max_length=1024)[0]['translation_text']
 
-    def translate(self, input, tmp):
-        try:
-            return self.trans.translate(input, src='en', tmp=tmp).result_text
-        except Exception as ex:
-            print(f'WARN: {ex}')
-            return ''
+def perform_back_translation(batch_texts, original_language="en", temporary_language="fr"):
 
-    def generate(self, input):
-        result0 = self.translate(input, tmp='zh-cn')
-        result1 = self.translate(input, tmp='de')
-        result2 = self.translate(input, tmp='fr')
-        result3 = self.translate(input, tmp='pl')
-        result4 = self.translate(input, tmp='ca')
-        return [result0, result1, result2, result3, result4], filter_best(input, [result0, result1, result2, result3, result4])
+  tmp_translated_batch = perform_translation(batch_texts, translator_first, temporary_language)
+  back_translated_batch = perform_translation([tmp_translated_batch], translator_second, original_language)
+  return back_translated_batch
 
 
 if __name__ == '__main__':
-    generator: BackTranslationGenerator = BackTranslationGenerator()
-    with open('../.data/quora/test.txt', "r", encoding='utf-8') as f:
+    with open('../.data/quora/test.tsv', "r", encoding='utf-8') as f:
         lines = [line.rstrip() for line in f]
-    with open('results/back_transl.txt', "w", encoding='utf-8') as f:
+    with open(f'../results/back_transl/{lang}.tsv', "w", encoding='utf-8') as f:
         for line in tqdm.tqdm(lines):
             input, refs = line.split('\t')
             orginal_input = input
-            refs = literal_eval(refs)
-            refs = [ref.lower() for ref in refs]
-            cands, the_best = generator.generate(input)
-            print(input, the_best)
-            print('\t'.join([orginal_input, str(the_best), str(cands), str(refs)]), file=f)
+            back_translated_batch = perform_back_translation([orginal_input])
+            print(back_translated_batch, file=f)
+            # print('\t'.join([orginal_input, str(the_best), str(cands), str(refs)]), file=f)
