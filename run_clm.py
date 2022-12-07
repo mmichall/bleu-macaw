@@ -270,7 +270,9 @@ def main(_args):
         raw_datasets = load_dataset(
             data_args.dataset_name, data_args.dataset_config_name, cache_dir=cache_path
         )
-        corpus_no = min(len(raw_datasets['train']), corpus_limit)
+        corpus_no = len(raw_datasets['train'])
+        if corpus_limit:
+            corpus_no = min(corpus_no, corpus_limit)
         valid_no = int(corpus_no * 5 / 100)
         raw_datasets["validation"] = raw_datasets["train"].select(range(0, valid_no))
         raw_datasets["train"] = raw_datasets["train"].select(range(valid_no, corpus_no))
