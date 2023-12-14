@@ -7,8 +7,7 @@
 README IN PROGRESS
 
 
-This repo contains the code for the paper ..., by ....
-
+This repo contains the code for the paper SMCLM: Semantically Meaningful Causal Language Modeling for Autoregressive Paraphrase Generation, by ....
 We propose an auto-generative model of paraphrase generation based on the pre-trained OpenAI's GPT-2 model and the SentenceTransformers encoding.
 
 
