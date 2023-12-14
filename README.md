@@ -5,13 +5,7 @@
 
 
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/hierarchical-sketch-induction-for-paraphrase/paraphrase-generation-on-mscoco)](https://paperswithcode.com/sota/paraphrase-generation-on-mscoco?p=hierarchical-sketch-induction-for-paraphrase)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/hierarchical-sketch-induction-for-paraphrase/paraphrase-generation-on-paralex)](https://paperswithcode.com/sota/paraphrase-generation-on-paralex?p=hierarchical-sketch-induction-for-paraphrase)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/hierarchical-sketch-induction-for-paraphrase/paraphrase-generation-on-quora-question-pairs-1)](https://paperswithcode.com/sota/paraphrase-generation-on-quora-question-pairs-1?p=hierarchical-sketch-induction-for-paraphrase)
-
-
-
-This repo contains the code for the paper [BleuMacaw: Unsupervised Paraphrasing with Pre-trained Language Model and Sentence Transformers](...), by Michał Perełkiewicz, Sławomir Dadas & Rafał Poświata (ACL 2023/ EMNLP 2023).
+This repo contains the code for the paper [BleuMacaw: Unsupervised Paraphrasing with Pre-trained Language Model and Sentence Transformers](...), by ....
 
 We propose an auto-generative model of paraphrase generation based on the pre-trained OpenAI's GPT-2 model and the SentenceTransformers encoding.
 
@@ -38,11 +32,9 @@ Then download (or generate) the datasets splits you want to work with:
 
 <a href="https://..." download>Download our split of QQP</a>
 
-<a href="https://..." download>Download our split of MSRP</a>
-
 <a href="https://..." download>Download our split of MSCOCO</a>
 
-<a href="https://..." download>Download our split of Paws-Wiki</a>
+<a href="https://..." download>Download our split of CNN Nws</a>
 
 Data zip should be unzipped into `./.data/<dataset_name>`, eg `./.data/quora`.
 
@@ -125,11 +117,9 @@ For optimization purpose, we use a small GPT-2 model. The further research shoul
 
 ## Evaluation
 ### Metrics
-BLEU, selfBLEU, oriBLEU, ROGUE-{1,2,L}, Meteor, s-t sim-{input-generated, best-refs}, BERTScore, stanford-grammar, 
+BLEU, selfBLEU, oriBLEU, ROGUE-L, s-t sim-{input-generated, best-refs}, BERTScore, BERT-iBLEU, SBERT-iBLEU 
 
 TODO: <miara ratio podobieństwo generated/ sim-sem generated-input>  
-
-nltk.word_tokenizer nad lower_cased.
 
 #### stanford-grammar
 
