@@ -4,8 +4,10 @@
 <img src="https://ih1.redbubble.net/image.790396839.3293/st,small,845x845-pad,1000x1000,f8f8f8.u2.jpg" width="260" align="right" alt="Graphical Model diagram for HRQ-VAE" />
 
 
+README IN PROGRESS
 
-This repo contains the code for the paper [BleuMacaw: Unsupervised Paraphrasing with Pre-trained Language Model and Sentence Transformers](...), by ....
+
+This repo contains the code for the paper ..., by ....
 
 We propose an auto-generative model of paraphrase generation based on the pre-trained OpenAI's GPT-2 model and the SentenceTransformers encoding.
 
@@ -32,9 +34,10 @@ Then download (or generate) the datasets splits you want to work with:
 
 <a href="https://..." download>Download our split of QQP</a>
 
+<a href="https://..." download>Download our split of CNN News</a>
+
 <a href="https://..." download>Download our split of MSCOCO</a>
 
-<a href="https://..." download>Download our split of CNN Nws</a>
 
 Data zip should be unzipped into `./.data/<dataset_name>`, eg `./.data/quora`.
 
@@ -117,9 +120,11 @@ For optimization purpose, we use a small GPT-2 model. The further research shoul
 
 ## Evaluation
 ### Metrics
-BLEU, selfBLEU, oriBLEU, ROGUE-L, s-t sim-{input-generated, best-refs}, BERTScore, BERT-iBLEU, SBERT-iBLEU 
+BLEU, selfBLEU, oriBLEU, ROGUE-{1,2,L}, Meteor, s-t sim-{input-generated, best-refs}, BERTScore, stanford-grammar, 
 
 TODO: <miara ratio podobieństwo generated/ sim-sem generated-input>  
+
+nltk.word_tokenizer nad lower_cased.
 
 #### stanford-grammar
 
