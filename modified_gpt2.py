@@ -1,23 +1,31 @@
-import json
+import ast
 import logging
+import random
 from typing import Optional, Union, List, Dict, Any
 import pandas as pd
+import numpy as np
 
 import torch
 from dataclasses import dataclass
 
-from datasets import DatasetDict, Dataset
+from datasets import DatasetDict, Dataset, IterableDatasetDict
 from nltk import tokenize, download
+from pandas._typing import F
 from sentence_transformers import SentenceTransformer
+from torch import nn, TensorType
 from torch.nn import CrossEntropyLoss
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerBase
+from torch.nn.functional import relu, tanh
+from torch.utils.data import IterableDataset
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerBase, RobertaTokenizer, RobertaModel, RobertaConfig, \
+    AutoModel
 from transformers.file_utils import PaddingStrategy
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, BaseModelOutputWithPastAndCrossAttentions
 from transformers.models.gpt2.modeling_gpt2 import GPT2LMHeadModel, GPT2Model
 import tqdm
-
+from transformers import AutoTokenizer, AutoModelForMaskedLM
 import config
 
+# copy mechanism: https://github.com/Liadrinz/transformers-copy-mechanism/blob/master/modeling.py
 
 @dataclass
 class ParaphrasingDataCollator:
@@ -45,19 +53,23 @@ class ParaphrasingDataCollator:
 
 class SentenceTransformerTokenizerWrapper(object):
 
-    def __init__(self, tokenizer: PreTrainedTokenizer, text_column_name: str, sentence_encoder: str, max_len: int=128):
+    def __init__(self, tokenizer: PreTrainedTokenizer, text_column_name: str, paraphrases_column_name: str, sentence_encoder: str, max_len: int=128):
         self.tokenizer = tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
         self.tokenizer.model_max_length = max_len
         self.text_column_name = text_column_name
+        self.paraphrases_column_name = paraphrases_column_name
         self.max_len = max_len
         self.st = SentenceTransformer(sentence_encoder, cache_folder=f'{config.cache_path}')
 
     def tokenize(self, examples):
-        original_texts = examples[self.text_column_name]
-        texts = [self.tokenizer.bos_token + text + self.tokenizer.eos_token for text in examples[self.text_column_name]]
-        embeddings = self.st.encode(original_texts, convert_to_tensor=False, convert_to_numpy=True)
+        # original_texts = [text for text in examples[self.text_column_name]]
+        # paraphrases = examples[self.paraphrases_column_name]
+        # sentences_a = [text for text in examples['sentence_a']]
+        sentences_b = [text for text in examples['text']]
+        texts = [self.tokenizer.bos_token + text + self.tokenizer.eos_token for text in sentences_b]
+        embeddings = self.st.encode(sentences_b, convert_to_tensor=False, convert_to_numpy=True)
         output = self.tokenizer(texts, truncation=True, max_length=self.max_len)
         output["sentence_embedding"] = embeddings
         return output
@@ -71,8 +83,8 @@ class DatasetSentenceSplitter:
         download('punkt')
 
     def split(self):
-        result = DatasetDict()
-        if isinstance(self.dataset, DatasetDict):
+        result = IterableDatasetDict()
+        if isinstance(self.dataset, IterableDatasetDict):
             for key, dataset in self.dataset.items():
                 self._split_part(key, dataset, result)
         else:
@@ -83,23 +95,14 @@ class DatasetSentenceSplitter:
         rows = []
         for row in tqdm.tqdm(dataset):
             text = row[self.text_column]
-            text = self._process_text(text)
+            # text = self._process_text(text)
             sentences = tokenize.sent_tokenize(text)
-            rows.extend([{self.text_column: sent, "label": -1} for sent in sentences])
+            rows.extend([{self.text_column: sent} for sent in sentences])
         df = pd.DataFrame(data=rows)
         result[key] = Dataset.from_pandas(df)
 
-    def _process_text(self, text: str):
-        return text.replace("<br />", " ").replace("<br/>", "")
-
-    # V5
-    # def _process_sent(self, sent: str):
-    #     if sent.endswith('!'):
-    #         return '<|exclamation|> ' + sent + ' <|endoftext|>'
-    #     if sent.endswith('?'):
-    #         return '<|question|> ' + sent + ' <|endoftext|>'
-    #     else:
-    #         return '<|startoftext|> ' + sent + ' <|endoftext|>'
+    # def _process_text(self, text: str):
+    #     return text.replace("<br />", ". ").replace("<br/>", ". ").replace("?.", "? ").replace("\\n\\n", " ").replace("\\n", " ").replace("\\t", " ").replace(".?", ".")
 
 
 class GPT2ParaphrasingLM(GPT2LMHeadModel):
@@ -109,7 +112,7 @@ class GPT2ParaphrasingLM(GPT2LMHeadModel):
         self.transformer = GPT2ParaphrasingModel(config)
 
     def prepare_inputs_for_generation(self, input_ids, past=None, **kwargs):
-        result = super().prepare_inputs_for_generation(input_ids, past, **kwargs)
+        result = super().prepare_inputs_for_generation(input_ids, **kwargs, past=past)
         result["sentence_embedding"] = kwargs["sentence_embedding"]
         return result
 
@@ -191,6 +194,10 @@ class GPT2ParaphrasingModel(GPT2Model):
 
     def __init__(self, config):
         super().__init__(config)
+        # self.embedd_encoder = nn.Linear(768, 1024, device='cuda')
+        # self.embedd_decoder = nn.Linear(1024, 768, device='cuda')
+        # self.embedd_drop = nn.Dropout(p=0.15)
+        # self.activation_fn = nn.ReLU()
 
     def forward(
             self,
@@ -209,6 +216,7 @@ class GPT2ParaphrasingModel(GPT2Model):
             return_dict=None,
             sentence_embedding=None
     ):
+
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -281,6 +289,25 @@ class GPT2ParaphrasingModel(GPT2Model):
         # head_mask has shape n_layer x batch x n_heads x N x N
         head_mask = self.get_head_mask(head_mask, self.config.n_layer)
 
+        # Test1
+        # if inputs_embeds is None:
+        #     inputs_embeds = self.wte(input_ids)
+        #     if past_length == 0:
+        #         for idx in range(attention_mask.size()[0]):
+        #             # nonzero_indices = (attention_mask[idx][0][0] == 0).nonzero(as_tuple=False)
+        #             # first_index = nonzero_indices[0][0]
+        #             # emb_idx = idx if sentence_embedding.size()[0] > idx else 0
+        #             inputs_embeds[idx, 0, :] = sentence_embedding[0]
+        # if past_length > 0:
+        #     position_embeds = self.wpe(position_ids - 1)
+        #     for idx in range(attention_mask.size()[0]):
+        #         b = position_embeds[idx, 0]
+        #         inputs_embeds[idx, 0:, :] = inputs_embeds[idx, 0:] + b
+        #
+        # hidden_states = inputs_embeds
+        # # hidden_states[:, attention_mask == 0, :] += position_embeds[:, attention_mask == 0, :]
+
+        # test1 baseline
         if inputs_embeds is None:
             inputs_embeds = self.wte(input_ids)
             if past_length == 0:
@@ -288,6 +315,11 @@ class GPT2ParaphrasingModel(GPT2Model):
                     nonzero_indices = (attention_mask[idx][0][0] == 0).nonzero(as_tuple=False)
                     first_index = nonzero_indices[0][0]
                     emb_idx = idx if sentence_embedding.size()[0] > idx else 0
+                    # _embedding = self.embedd_encoder(sentence_embedding[emb_idx])
+                    # _embedding = self.embedd_drop(self.activation_fn(_embedding))
+                    # _embedding = self.embedd_decoder(_embedding)
+                    # _embedding = self.embedd_drop(self.activation_fn(_embedding))
+                    # inputs_embeds[idx, first_index, :] = _embedding
                     inputs_embeds[idx, first_index, :] = sentence_embedding[emb_idx]
         position_embeds = self.wpe(position_ids)
         hidden_states = inputs_embeds + position_embeds
